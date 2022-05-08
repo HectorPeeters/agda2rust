@@ -25,7 +25,8 @@ executable agda2rust
     main-is:          Main.hs
 
     -- Modules included in this executable, other than Main.
-    other-modules:    Agda.Compiler.ToRust
+    other-modules:    Agda.Compiler.ToRust,
+                      Agda.Compiler.RustSyntax
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
@@ -35,7 +36,6 @@ executable agda2rust
                       , deepseq >= 1.4.5
                       , mtl >= 2.2.2
                       , pretty >= 1.1.3.3
-                      , s-cargot >= 0.1.4
                       , text >= 1.2.3.1
     hs-source-dirs:   src
     default-language: Haskell2010

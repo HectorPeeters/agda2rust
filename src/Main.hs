@@ -7,6 +7,8 @@ import Agda.Interaction.Options (OptDescr)
 import Agda.Main (runAgda)
 import Agda.Utils.Pretty (prettyShow)
 import Control.Monad.Reader (MonadIO (liftIO))
+import Data.List (intercalate)
+import Data.Maybe (catMaybes)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import Prelude hiding (empty, null)
@@ -45,5 +47,6 @@ rustCompileDef opts _ isMain def = runToRustM opts $ toRust def
 
 rustPostModule :: RustOptions -> () -> IsMain -> ModuleName -> [Maybe RustStatement] -> TCM ()
 rustPostModule opts _ isMain modName defs = do
-  let fileName = prettyShow (last $ mnameToList modName) ++ ".rs"
-  liftIO $ T.writeFile fileName ""
+  let modText = intercalate "\n\n" $ map show (catMaybes defs)
+      fileName = prettyShow (last $ mnameToList modName) ++ ".rs"
+  liftIO $ T.writeFile fileName (T.pack modText)

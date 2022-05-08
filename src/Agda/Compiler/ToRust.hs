@@ -1,23 +1,54 @@
 module Agda.Compiler.ToRust where
 
-import Agda.TypeChecking.Monad (Definition, TCM)
+import Agda.Compiler.Common
+import Agda.Compiler.RustSyntax
+import Agda.Compiler.ToTreeless
+import Agda.Compiler.Treeless.EliminateLiteralPatterns
+import Agda.Syntax.Abstract.Name
+import Agda.Syntax.Common
+import Agda.Syntax.Concrete (Name (nameNameParts))
+import Agda.Syntax.Internal as I
+import Agda.Syntax.Literal
+import Agda.Syntax.Treeless
+import Agda.TypeChecking.Monad
+import Agda.TypeChecking.Pretty
+import Agda.TypeChecking.Primitive.Base
+import Agda.Utils.Impossible
+import Agda.Utils.Lens
+import Agda.Utils.List
+import Agda.Utils.Maybe
+import Agda.Utils.Monad
+import Agda.Utils.Null
+import Agda.Utils.Pretty
+import Agda.Utils.Singleton
 import Control.DeepSeq (NFData)
-import Control.Monad.Reader (ReaderT (runReaderT))
-import Control.Monad.State (StateT, evalStateT)
+import Control.Monad
+import Control.Monad.Except
+import Control.Monad.Reader
+import Control.Monad.State
+import Data.Char
+import Data.List
+import Data.Map (Map)
+import qualified Data.Map as Map
+import Data.Set (Set)
+import qualified Data.Set as Set
+import Data.Text (Text)
+import qualified Data.Text as T
 import GHC.Generics (Generic)
+import Prelude hiding (empty, null)
 
 data RustOptions = RustOptions {} deriving (Generic, NFData)
 
-data RustStatement = RustStatement {}
+type RustStatement = Item
 
 data ToRustState = ToRustState {}
 
-data ToRustEnv = ToRustEnv {toRustOptions :: RustOptions}
+newtype ToRustEnv = ToRustEnv {toRustOptions :: RustOptions}
 
 type ToRustM a = StateT ToRustState (ReaderT ToRustEnv TCM) a
 
 initToRustEnv :: RustOptions -> ToRustEnv
-initToRustEnv opts = ToRustEnv opts
+initToRustEnv = ToRustEnv
 
 initToRustState :: ToRustState
 initToRustState = ToRustState {}
@@ -28,5 +59,26 @@ runToRustM opts = (`runReaderT` initToRustEnv opts) . (`evalStateT` initToRustSt
 class ToRust a b where
   toRust :: a -> ToRustM b
 
+getDataTypeName :: QName -> String
+getDataTypeName name = prettyShow (nameConcrete (last (mnameToList (qnameModule name))))
+
+capitalize :: String -> String
+capitalize xs = toUpper (head xs) : tail xs
+
+datatypeToRust :: [QName] -> Maybe RustStatement
+datatypeToRust cons =
+  Just
+    ( Enum
+        (Ident (getDataTypeName (head cons)))
+        (map (Variant . Ident . capitalize . prettyShow . qnameName) cons)
+    )
+
 instance ToRust Definition (Maybe RustStatement) where
-  toRust _ = error "Not implemented"
+  toRust def | defNoCompilation def || not (usableModality $ getModality def) = return Nothing
+  toRust def = do
+    let f = defName def
+    case theDef def of
+      Axiom {} -> return Nothing
+      Datatype {dataCons = cons} -> return (datatypeToRust cons)
+      -- Constructor {conSrcCon = chead, conArity = nargs} -> return (constructorToRust chead nargs)
+       _ -> return Nothing
