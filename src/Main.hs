@@ -2,7 +2,8 @@ module Main where
 
 import Agda.Compiler.Backend
 import Agda.Compiler.Common
-import Agda.Compiler.ToRust (RustOptions (RustOptions), RustStatement, ToRust (toRust), runToRustM)
+import Agda.Compiler.ToRust (RustOptions (RustOptions), ToRust (toRust), runToRustM)
+import Agda.Compiler.RustSyntax (RsItem)
 import Agda.Interaction.Options (OptDescr)
 import Agda.Main (runAgda)
 import Agda.Utils.Pretty (prettyShow)
@@ -19,7 +20,7 @@ main = runAgda [backend]
 backend :: Backend
 backend = Backend backend'
 
-backend' :: Backend' RustOptions RustOptions () () (Maybe RustStatement)
+backend' :: Backend' RustOptions RustOptions () () (Maybe RsItem)
 backend' =
   Backend'
     { backendName = "agda2rust",
@@ -42,10 +43,10 @@ rustFlags = []
 rustPreCompile :: RustOptions -> TCM RustOptions
 rustPreCompile = return
 
-rustCompileDef :: RustOptions -> () -> IsMain -> Definition -> TCM (Maybe RustStatement)
+rustCompileDef :: RustOptions -> () -> IsMain -> Definition -> TCM (Maybe RsItem)
 rustCompileDef opts _ isMain def = runToRustM opts $ toRust def
 
-rustPostModule :: RustOptions -> () -> IsMain -> ModuleName -> [Maybe RustStatement] -> TCM ()
+rustPostModule :: RustOptions -> () -> IsMain -> ModuleName -> [Maybe RsItem] -> TCM ()
 rustPostModule opts _ isMain modName defs = do
   let modText = intercalate "\n\n" $ map show (catMaybes defs)
       fileName = prettyShow (last $ mnameToList modName) ++ ".rs"

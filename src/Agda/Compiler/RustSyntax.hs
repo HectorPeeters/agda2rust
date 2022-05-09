@@ -4,58 +4,58 @@ import Data.List (intercalate)
 
 -- Based on: https://hackage.haskell.org/package/flp-0.1.0.0/docs/src/Language.Rust.Syntax.AST.html
 
-newtype Ident = Ident String
+newtype RsIdent = RsIdent String deriving (Eq, Ord)
 
-instance Show Ident where
-  show (Ident x) = x
+instance Show RsIdent where
+  show (RsIdent x) = x
 
-newtype Variant = Variant Ident
+newtype RsVariant = RsVariant RsIdent
 
-instance Show Variant where
-  show (Variant ident) = show ident ++ "()"
+instance Show RsVariant where
+  show (RsVariant ident) = show ident ++ "()"
 
-newtype Type = EnumType Ident
+newtype RsType = RsEnumType RsIdent
 
-instance Show Type where
-  show (EnumType ident) = show ident
+instance Show RsType where
+  show (RsEnumType ident) = show ident
 
-data Argument = Argument Ident Type
+data RsArgument = RsArgument RsIdent RsType
 
-instance Show Argument where
-  show (Argument ident ty) = show ident ++ ": " ++ show ty
+instance Show RsArgument where
+  show (RsArgument ident ty) = show ident ++ ": " ++ show ty
 
-data FunctionDecl = FunctionDecl [Argument] (Maybe Type)
+data RsFunctionDecl = RsFunctionDecl [RsArgument] (Maybe RsType)
 
-instance Show FunctionDecl where
-  show (FunctionDecl args Nothing) =
+instance Show RsFunctionDecl where
+  show (RsFunctionDecl args Nothing) =
     "(" ++ intercalate ", " (map show args)
       ++ ")"
-  show (FunctionDecl args (Just returnType)) =
+  show (RsFunctionDecl args (Just returnRsType)) =
     "(" ++ intercalate ", " (map show args)
       ++ ") -> "
-      ++ show returnType
+      ++ show returnRsType
 
-newtype Expr = Expr String
+newtype RsExpr = RsExpr String
 
-instance Show Expr where
-  show (Expr _) = "EXPR"
+instance Show RsExpr where
+  show (RsExpr _) = "EXPR"
 
-newtype Statement = Return Expr
+newtype RsStatement = Return RsExpr
 
-instance Show Statement where
+instance Show RsStatement where
   show (Return expr) = "return " ++ show expr ++ ";"
 
-newtype Block = Block [Statement]
+newtype RsBlock = RsBlock [RsStatement]
 
-instance Show Block where
-  show (Block stmts) = "{\n\t" ++ intercalate "\n\t" (map show stmts) ++ "\n}"
+instance Show RsBlock where
+  show (RsBlock stmts) = "{\n\t" ++ intercalate "\n\t" (map show stmts) ++ "\n}"
 
-data Item = Enum Ident [Variant] | Function Ident FunctionDecl Block
+data RsItem = RsEnum RsIdent [RsVariant] | RsFunction RsIdent RsFunctionDecl RsBlock
 
-instance Show Item where
-  show (Enum ident variants) =
+instance Show RsItem where
+  show (RsEnum ident variants) =
     "enum " ++ show ident
       ++ " {\n\t"
       ++ intercalate ",\n\t" (map show variants)
       ++ "\n}"
-  show (Function ident decl body) = "fn " ++ show ident ++ show decl ++ show body
+  show (RsFunction ident decl body) = "fn " ++ show ident ++ show decl ++ " " ++ show body

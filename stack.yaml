@@ -1,0 +1,10 @@
+resolver:
+  url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/19/4.yaml
+
+packages:
+- .
+
+extra-deps:
+- s-cargot-0.1.4.0
+
+

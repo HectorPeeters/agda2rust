@@ -9,3 +9,8 @@ MAlonzo
 *.agda#
 *~
 .#*.agda
+
+*.agda
+*.rs
+.vscode/
+.stack-work/
