@@ -27,6 +27,7 @@ import Control.Monad.Except
 import Control.Monad.Reader
 import Control.Monad.State
 import Data.Char
+import Data.Data (dataTypeName)
 import Data.List
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -37,7 +38,6 @@ import qualified Data.Text as T
 import Debug.Trace (trace)
 import GHC.Generics (Generic)
 import Prelude hiding (empty, null)
-import Data.Data (dataTypeName)
 
 data RustOptions = RustOptions {} deriving (Generic, NFData)
 
@@ -99,13 +99,28 @@ setNameUsed x = modify $ \s ->
   s {toRustUsedNames = Set.insert x (toRustUsedNames s)}
 
 rustAllowedUnicodeCats :: Set GeneralCategory
-rustAllowedUnicodeCats = Set.fromList
-  [ UppercaseLetter , LowercaseLetter , TitlecaseLetter , ModifierLetter
-  , OtherLetter , NonSpacingMark , SpacingCombiningMark , EnclosingMark
-  , DecimalNumber , LetterNumber , OtherNumber , ConnectorPunctuation
-  , DashPunctuation , OtherPunctuation , CurrencySymbol , MathSymbol
-  , ModifierSymbol , OtherSymbol , PrivateUse
-  ]
+rustAllowedUnicodeCats =
+  Set.fromList
+    [ UppercaseLetter,
+      LowercaseLetter,
+      TitlecaseLetter,
+      ModifierLetter,
+      OtherLetter,
+      NonSpacingMark,
+      SpacingCombiningMark,
+      EnclosingMark,
+      DecimalNumber,
+      LetterNumber,
+      OtherNumber,
+      ConnectorPunctuation,
+      DashPunctuation,
+      OtherPunctuation,
+      CurrencySymbol,
+      MathSymbol,
+      ModifierSymbol,
+      OtherSymbol,
+      PrivateUse
+    ]
 
 isValidRustChar :: Char -> Bool
 isValidRustChar x
@@ -123,7 +138,7 @@ makeRustName n = do
   setNameUsed (RsIdent a)
   return (RsIdent a)
   where
-    nextName = ('z' :) -- TODO: do something smarter  
+    nextName = ('z' :) -- TODO: do something smarter
     go s = ifM (isNameUsed $ RsIdent s) (go $ nextName s) (return s)
 
     fixName s =
@@ -149,8 +164,8 @@ instance ToRust Definition (Maybe RsItem) where
     let f = defName def
     case theDef def of
       Axiom {} -> return Nothing
-      GeneralizableVar{} -> return Nothing
-      Function{} -> return Nothing
+      GeneralizableVar {} -> return Nothing
+      Function {} -> return Nothing
       Primitive {} -> return Nothing
       PrimitiveSort {} -> return Nothing
       Datatype {dataCons = cons} -> do
@@ -160,18 +175,21 @@ instance ToRust Definition (Maybe RsItem) where
         variants <- mapM (return . RsVariant) idents
 
         return (Just (RsEnum name variants))
-      Record{} -> return Nothing
-      Constructor {conSrcCon = chead, conArity = nargs} -> do
-        constructorName <- makeRustName (conName chead)
+      Record {} -> return Nothing
+      Constructor {conSrcCon = chead, conArity = nargs} -> return Nothing
+      -- NOTE: Right now the default constructor of the enum is used. This will not work with currying
+      -- Constructor {conSrcCon = chead, conArity = nargs} -> do
+      --   constructorName <- makeRustName (conName chead)
 
-        let dataTypeName = Just (RsEnumType (RsIdent (getDataTypeName (conName chead))))
-        let args = []-- [RsArgument (RsIdent "x") (RsEnumType (RsIdent "Bool"))]
-        let body = RsBlock []
+      --   let dataTypeName = RsIdent (getDataTypeName (conName chead))
+      --   let enumName = Just (RsEnumType dataTypeName)
+      --   let args = [] -- [RsArgument (RsIdent "x") (RsEnumType (RsIdent "Bool"))]
+      --   let body = RsBlock [RsSemi (RsReturn (Just (RsStruct dataTypeName [])))]
 
-        -- TODO: add arguments and body
-        return (Just (RsFunction constructorName (RsFunctionDecl args dataTypeName) body))
-      AbstractDefn{} -> __IMPOSSIBLE__
-      DataOrRecSig{} -> __IMPOSSIBLE__
+      --   -- TODO: add arguments and body
+      --   return (Just (RsFunction constructorName (RsFunctionDecl args enumName) body))
+      AbstractDefn {} -> __IMPOSSIBLE__
+      DataOrRecSig {} -> __IMPOSSIBLE__
 
 instance ToRust TTerm RsExpr where
   toRust v = do

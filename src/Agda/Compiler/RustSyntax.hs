@@ -35,15 +35,21 @@ instance Show RsFunctionDecl where
       ++ ") -> "
       ++ show returnRsType
 
-newtype RsExpr = RsExpr String
+data RsField = RsField RsIdent RsExpr
+
+instance Show RsField where
+  show (RsField ident expr) = show ident ++ ": " ++ show expr
+
+data RsExpr = RsReturn (Maybe RsExpr)
 
 instance Show RsExpr where
-  show (RsExpr _) = "EXPR"
+  show (RsReturn Nothing) = "return"
+  show (RsReturn (Just expr)) = "return " ++ show expr
 
-newtype RsStatement = Return RsExpr
+newtype RsStatement = RsSemi RsExpr
 
 instance Show RsStatement where
-  show (Return expr) = "return " ++ show expr ++ ";"
+  show (RsSemi expr) = show expr ++ ";"
 
 newtype RsBlock = RsBlock [RsStatement]
 
@@ -54,7 +60,7 @@ data RsItem = RsEnum RsIdent [RsVariant] | RsFunction RsIdent RsFunctionDecl RsB
 
 instance Show RsItem where
   show (RsEnum ident variants) =
-    "enum " ++ show ident
+    "use " ++ show ident ++ "::*;\nenum " ++ show ident
       ++ " {\n\t"
       ++ intercalate ",\n\t" (map show variants)
       ++ "\n}"
