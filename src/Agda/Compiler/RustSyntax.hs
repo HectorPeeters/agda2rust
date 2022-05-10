@@ -40,11 +40,20 @@ data RsField = RsField RsIdent RsExpr
 instance Show RsField where
   show (RsField ident expr) = show ident ++ ": " ++ show expr
 
-data RsExpr = RsReturn (Maybe RsExpr)
+-- TODO: This only supports pattern matching with identifiers
+data RsArm = RsArm RsIdent RsExpr
+
+instance Show RsArm where
+  show (RsArm ident expr) = show ident ++ " => " ++ show expr ++ ","
+
+-- TODO: add capture data to RsClosure
+data RsExpr = RsReturn (Maybe RsExpr) | RsClosure RsFunctionDecl RsExpr | RsMatch RsExpr [RsArm]
 
 instance Show RsExpr where
   show (RsReturn Nothing) = "return"
   show (RsReturn (Just expr)) = "return " ++ show expr
+  show (RsClosure (RsFunctionDecl args return) expr) = "|" ++ intercalate ", " (map show args) ++ "| {" ++ show expr ++ "}"
+  show (RsMatch expr arms) = "match " ++ show expr ++ " {\n" ++ intercalate "\n" (map show arms) ++ "\n}"
 
 newtype RsStatement = RsSemi RsExpr
 

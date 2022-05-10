@@ -13,6 +13,7 @@ import Data.Maybe (catMaybes)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import Prelude hiding (empty, null)
+import Agda.Syntax.Treeless (EvaluationStrategy(EagerEvaluation))
 
 main :: IO ()
 main = runAgda [backend]
@@ -24,7 +25,7 @@ backend' :: Backend' RustOptions RustOptions () () (Maybe RsItem)
 backend' =
   Backend'
     { backendName = "agda2rust",
-      options = RustOptions,
+      options = RustOptions EagerEvaluation,
       commandLineFlags = rustFlags,
       isEnabled = const True,
       preCompile = rustPreCompile,

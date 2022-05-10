@@ -39,7 +39,13 @@ import Debug.Trace (trace)
 import GHC.Generics (Generic)
 import Prelude hiding (empty, null)
 
-data RustOptions = RustOptions {} deriving (Generic, NFData)
+deriving instance Generic EvaluationStrategy
+deriving instance NFData  EvaluationStrategy
+
+data RustOptions = RustOptions
+  { rustEvaluation :: EvaluationStrategy
+  }
+  deriving (Generic, NFData)
 
 data ToRustState = ToRustState
   { toRustDefs :: Map QName RsIdent,
@@ -74,6 +80,9 @@ initToRustState = ToRustState {toRustDefs = Map.empty, toRustUsedNames = reserve
 
 runToRustM :: RustOptions -> ToRustM a -> TCM a
 runToRustM opts = (`runReaderT` initToRustEnv opts) . (`evalStateT` initToRustState)
+
+getEvaluationStrategy :: ToRustM EvaluationStrategy
+getEvaluationStrategy = reader $ rustEvaluation . toRustOptions
 
 class ToRust a b where
   toRust :: a -> ToRustM b
@@ -165,7 +174,15 @@ instance ToRust Definition (Maybe RsItem) where
     case theDef def of
       Axiom {} -> return Nothing
       GeneralizableVar {} -> return Nothing
-      Function {} -> return Nothing
+      Function {} -> do
+        strat <- getEvaluationStrategy
+        maybeCompiled <- liftTCM $ toTreeless strat f
+        case maybeCompiled of
+          Just body -> do
+            functionName <- toRust f
+            body <- toRust body
+            return (Just (RsFunction functionName (RsFunctionDecl [] Nothing) (RsBlock [RsSemi (RsReturn (Just body))])))
+          Nothing -> return Nothing
       Primitive {} -> return Nothing
       PrimitiveSort {} -> return Nothing
       Datatype {dataCons = cons} -> do
@@ -197,17 +214,25 @@ instance ToRust TTerm RsExpr where
     let (w, args) = tAppView v
     -- args' <- traverse toRust args
     case w of
-      TVar i -> error "Not implemented"
-      TPrim p -> error "Not implemented"
-      TDef d -> error "Not implemented"
-      TLam v -> error "Not implemented"
-      TLit l -> error "Not implemented"
-      TCon c -> error "Not implemented"
-      TLet u v -> error "Not implemented"
-      TCase i info v bs -> error "Not implemented"
-      TUnit -> error "Not implemented"
-      TSort -> error "Not implemented"
-      TErased -> error "Not implemented"
-      TCoerce u -> error "Not implemented"
-      TError err -> error "Not implemented"
+      TVar i -> error ("Not implemented " ++ show w)
+      TPrim p -> error ("Not implemented " ++ show w)
+      TDef d -> error ("Not implemented " ++ show w)
+      TLam v -> do
+        body <- toRust v
+        return (RsClosure (RsFunctionDecl [] Nothing) body)
+      TLit l -> error ("Not implemented " ++ show w)
+      TCon c -> error ("Not implemented " ++ show w)
+      TLet u v -> error ("Not implemented " ++ show w)
+      TCase i info v bs -> do
+        cases <- traverse toRust bs
+        cases <- mapM (\x -> return (RsArm (RsIdent "A()") x)) cases
+        return (RsMatch (RsReturn Nothing) cases)
+      TUnit -> error ("Not implemented " ++ show w)
+      TSort -> error ("Not implemented " ++ show w)
+      TErased -> error ("Not implemented " ++ show w)
+      TCoerce u -> error ("Not implemented " ++ show w)
+      TError err -> error ("Not implemented " ++ show w)
       TApp f args -> __IMPOSSIBLE__
+
+instance ToRust TAlt RsExpr where
+  toRust a = return (RsReturn Nothing)
