@@ -209,10 +209,13 @@ freshRustIdentifier = do
         setNameUsed ident
         return x
 
+generateFunctionName :: QName -> Text
+generateFunctionName = replace "." "_" . T.pack . prettyShow
+
 compileFunction :: Definition -> [RsIdent] -> RsExpr -> Maybe RsItem
 compileFunction func argNames body = do
   let def = theDef func
-  let name = getDataTypeName (defName func)
+  let name = generateFunctionName $ defName func
   let args = map (\name -> RsArgument name (RsEnumType (RsIdent "Bool"))) argNames
   Just
     ( trace
