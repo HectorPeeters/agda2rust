@@ -1,13 +1,15 @@
 module Agda.Compiler.RustSyntax where
 
 import Data.List (intercalate)
+import Data.Text (Text)
+import qualified Data.Text as T
 
 -- Based on: https://hackage.haskell.org/package/flp-0.1.0.0/docs/src/Language.Rust.Syntax.AST.html
 
-newtype RsIdent = RsIdent String deriving (Eq, Ord)
+newtype RsIdent = RsIdent Text deriving (Eq, Ord)
 
 instance Show RsIdent where
-  show (RsIdent x) = x
+  show (RsIdent x) = T.unpack x
 
 newtype RsVariant = RsVariant RsIdent
 
@@ -47,18 +49,20 @@ instance Show RsArm where
   show (RsArm ident expr) = show ident ++ " => " ++ show expr ++ ","
 
 -- TODO: add capture data to RsClosure
-data RsExpr = RsReturn (Maybe RsExpr) | RsClosure RsFunctionDecl RsExpr | RsMatch RsExpr [RsArm]
+data RsExpr = RsReturn (Maybe RsExpr) | RsClosure [RsIdent] RsExpr | RsMatch RsExpr [RsArm] (Maybe RsExpr)
 
 instance Show RsExpr where
   show (RsReturn Nothing) = "return"
   show (RsReturn (Just expr)) = "return " ++ show expr
-  show (RsClosure (RsFunctionDecl args return) expr) = "|" ++ intercalate ", " (map show args) ++ "| {" ++ show expr ++ "}"
-  show (RsMatch expr arms) = "match " ++ show expr ++ " {\n" ++ intercalate "\n" (map show arms) ++ "\n}"
+  show (RsClosure args expr) = "|" ++ intercalate ", " (map show args) ++ "| {" ++ show expr ++ "}"
+  show (RsMatch expr arms Nothing) = "match " ++ show expr ++ " {\n" ++ intercalate "\n" (map show arms) ++ "\n}"
+  show (RsMatch expr arms (Just fallback)) = "match " ++ show expr ++ " {\n" ++ intercalate "\n" (map show arms) ++ "\n_ =>" ++ show fallback ++ "\n}"
 
-newtype RsStatement = RsSemi RsExpr
+data RsStatement = RsSemi RsExpr | RsNoSemi RsExpr
 
 instance Show RsStatement where
   show (RsSemi expr) = show expr ++ ";"
+  show (RsNoSemi expr) = show expr
 
 newtype RsBlock = RsBlock [RsStatement]
 

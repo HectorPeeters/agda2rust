@@ -2,8 +2,9 @@ module Agda.Compiler.ToRust where
 
 import Agda.Compiler.Common
 import Agda.Compiler.RustSyntax
-import Agda.Compiler.ToTreeless
+import Agda.Compiler.ToTreeless (toTreeless)
 import Agda.Compiler.Treeless.EliminateLiteralPatterns
+import Agda.Compiler.Treeless.NormalizeNames (normalizeNames)
 import Agda.Syntax.Abstract.Name
 import Agda.Syntax.Common
 import Agda.Syntax.Concrete (Name (nameNameParts))
@@ -13,7 +14,7 @@ import Agda.Syntax.Treeless
 import Agda.TypeChecking.Monad
 import Agda.TypeChecking.Pretty
 import Agda.TypeChecking.Primitive.Base
-import Agda.Utils.Impossible
+import Agda.Utils.Impossible (__IMPOSSIBLE__)
 import Agda.Utils.Lens
 import Agda.Utils.List
 import Agda.Utils.Maybe
@@ -24,6 +25,7 @@ import Agda.Utils.Singleton
 import Control.DeepSeq (NFData)
 import Control.Monad
 import Control.Monad.Except
+import Control.Monad.IO.Class (MonadIO (liftIO))
 import Control.Monad.Reader
 import Control.Monad.State
 import Data.Char
@@ -33,31 +35,39 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Data.Text (Text)
+import Data.Text (Text, replace)
 import qualified Data.Text as T
 import Debug.Trace (trace)
 import GHC.Generics (Generic)
 import Prelude hiding (empty, null)
 
 deriving instance Generic EvaluationStrategy
-deriving instance NFData  EvaluationStrategy
 
-data RustOptions = RustOptions
+deriving instance NFData EvaluationStrategy
+
+newtype RustOptions = RustOptions
   { rustEvaluation :: EvaluationStrategy
   }
   deriving (Generic, NFData)
 
 data ToRustState = ToRustState
-  { toRustDefs :: Map QName RsIdent,
+  { toRustFresh :: [Text],
+    toRustDefs :: Map QName RsIdent,
     toRustUsedNames :: Set RsIdent
   }
 
-newtype ToRustEnv = ToRustEnv {toRustOptions :: RustOptions}
+data ToRustEnv = ToRustEnv
+  { toRustOptions :: RustOptions,
+    toRustVars :: [RsIdent]
+  }
 
 type ToRustM a = StateT ToRustState (ReaderT ToRustEnv TCM) a
 
 initToRustEnv :: RustOptions -> ToRustEnv
-initToRustEnv = ToRustEnv
+initToRustEnv opts = ToRustEnv opts []
+
+addBinding :: RsIdent -> ToRustEnv -> ToRustEnv
+addBinding x env = env {toRustVars = x : toRustVars env}
 
 reservedNames :: Set RsIdent
 reservedNames =
@@ -75,8 +85,18 @@ reservedNames =
         "false"
       ]
 
+freshVars :: [Text]
+freshVars = concat [map (<> i) xs | i <- "" : map (T.pack . show) [1 ..]]
+  where
+    xs = map T.singleton ['a' .. 'z']
+
 initToRustState :: ToRustState
-initToRustState = ToRustState {toRustDefs = Map.empty, toRustUsedNames = reservedNames}
+initToRustState =
+  ToRustState
+    { toRustFresh = freshVars,
+      toRustDefs = Map.empty,
+      toRustUsedNames = reservedNames
+    }
 
 runToRustM :: RustOptions -> ToRustM a -> TCM a
 runToRustM opts = (`runReaderT` initToRustEnv opts) . (`evalStateT` initToRustState)
@@ -142,12 +162,12 @@ fourBitsToChar i = "0123456789ABCDEF" !! i
 
 makeRustName :: QName -> ToRustM RsIdent
 makeRustName n = do
-  a <- go $ fixName $ prettyShow $ qnameName n
+  a <- go $ T.pack $ fixName $ prettyShow $ qnameName n
   saveDefName n (RsIdent a)
   setNameUsed (RsIdent a)
   return (RsIdent a)
   where
-    nextName = ('z' :) -- TODO: do something smarter
+    nextName x = T.pack ('z' : T.unpack x) -- TODO: do something smarter
     go s = ifM (isNameUsed $ RsIdent s) (go $ nextName s) (return s)
 
     fixName s =
@@ -161,11 +181,47 @@ makeRustName n = do
     toHex 0 = ""
     toHex i = toHex (i `div` 16) ++ [fourBitsToChar (i `mod` 16)]
 
-getDataTypeName :: QName -> String
-getDataTypeName name = prettyShow (nameConcrete (last (mnameToList (qnameModule name))))
+getDataTypeName :: QName -> Text
+getDataTypeName name = T.pack $ prettyShow (nameConcrete (last (mnameToList (qnameModule name))))
 
-capitalize :: String -> String
-capitalize xs = toUpper (head xs) : tail xs
+getVar :: Int -> ToRustM RsIdent
+getVar i = reader $ (!! i) . toRustVars
+
+withFreshVar :: (Text -> ToRustM a) -> ToRustM a
+withFreshVar f = do
+  strat <- getEvaluationStrategy
+  withFreshVar' strat f
+
+withFreshVar' :: EvaluationStrategy -> (Text -> ToRustM a) -> ToRustM a
+withFreshVar' strat f = do
+  x <- freshRustIdentifier
+  local (addBinding $ RsIdent x) $ f x
+
+freshRustIdentifier :: ToRustM Text
+freshRustIdentifier = do
+  names <- gets toRustFresh
+  case names of
+    [] -> fail "No more variables!"
+    (x : names') -> do
+      let ident = RsIdent x
+      modify $ \st -> st {toRustFresh = names'}
+      ifM (isNameUsed ident) freshRustIdentifier $ {-otherwise-} do
+        setNameUsed ident
+        return x
+
+compileFunction :: Definition -> Maybe RsItem
+compileFunction func = do
+  let def = theDef func
+  let name = getDataTypeName (defName func)
+  Just
+    ( trace
+        (show (unEl (defType func)))
+        ( RsFunction
+            (RsIdent name)
+            (RsFunctionDecl [RsArgument (RsIdent "x") (RsEnumType (RsIdent "Bool"))] (Just (RsEnumType (RsIdent "Bool"))))
+            (RsBlock [])
+        )
+    )
 
 instance ToRust Definition (Maybe RsItem) where
   toRust def | defNoCompilation def || not (usableModality $ getModality def) = return Nothing
@@ -179,9 +235,10 @@ instance ToRust Definition (Maybe RsItem) where
         maybeCompiled <- liftTCM $ toTreeless strat f
         case maybeCompiled of
           Just body -> do
-            functionName <- toRust f
             body <- toRust body
-            return (Just (RsFunction functionName (RsFunctionDecl [] Nothing) (RsBlock [RsSemi (RsReturn (Just body))])))
+            return case body of
+              RsClosure args body -> compileFunction def
+              _ -> __IMPOSSIBLE__
           Nothing -> return Nothing
       Primitive {} -> return Nothing
       PrimitiveSort {} -> return Nothing
@@ -210,29 +267,35 @@ instance ToRust Definition (Maybe RsItem) where
 
 instance ToRust TTerm RsExpr where
   toRust v = do
-    v <- liftTCM $ eliminateLiteralPatterns v
-    let (w, args) = tAppView v
-    -- args' <- traverse toRust args
+    toRust $ tAppView v
+
+instance ToRust (TTerm, [TTerm]) RsExpr where
+  toRust (TCoerce w, args) = toRust (w, args)
+  toRust (TApp w args1, args2) = toRust (w, args1 ++ args2)
+  toRust (w, args) = do
+    -- args <- traverse toRust args
     case w of
       TVar i -> error ("Not implemented " ++ show w)
       TPrim p -> error ("Not implemented " ++ show w)
       TDef d -> error ("Not implemented " ++ show w)
-      TLam v -> do
+      TLam v -> withFreshVar $ \x -> do
         body <- toRust v
-        return (RsClosure (RsFunctionDecl [] Nothing) body)
+        return (trace (show w) (RsClosure [RsIdent x] body))
       TLit l -> error ("Not implemented " ++ show w)
       TCon c -> error ("Not implemented " ++ show w)
       TLet u v -> error ("Not implemented " ++ show w)
       TCase i info v bs -> do
         cases <- traverse toRust bs
-        cases <- mapM (\x -> return (RsArm (RsIdent "A()") x)) cases
-        return (RsMatch (RsReturn Nothing) cases)
+        cases <- mapM (return . RsArm (RsIdent "A()")) cases
+        fallback <-
+          if isUnreachable v
+            then return Nothing
+            else Just <$> toRust v
+        return (RsMatch (RsReturn Nothing) cases fallback)
       TUnit -> error ("Not implemented " ++ show w)
       TSort -> error ("Not implemented " ++ show w)
       TErased -> error ("Not implemented " ++ show w)
-      TCoerce u -> error ("Not implemented " ++ show w)
       TError err -> error ("Not implemented " ++ show w)
-      TApp f args -> __IMPOSSIBLE__
 
 instance ToRust TAlt RsExpr where
   toRust a = return (RsReturn Nothing)
