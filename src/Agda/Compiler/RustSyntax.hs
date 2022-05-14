@@ -49,7 +49,12 @@ instance Show RsArm where
   show (RsArm ident expr) = show ident ++ " => " ++ show expr ++ ","
 
 -- TODO: add capture data to RsClosure
-data RsExpr = RsReturn (Maybe RsExpr) | RsClosure [RsIdent] RsExpr | RsMatch RsExpr [RsArm] (Maybe RsExpr)
+data RsExpr
+  = RsReturn (Maybe RsExpr)
+  | RsClosure [RsIdent] RsExpr
+  | RsMatch RsExpr [RsArm] (Maybe RsExpr)
+  | -- NOTE: this should techinically be a Path but lets try and avoid those for now
+    RsVarRef RsIdent
 
 instance Show RsExpr where
   show (RsReturn Nothing) = "return"
@@ -57,6 +62,7 @@ instance Show RsExpr where
   show (RsClosure args expr) = "|" ++ intercalate ", " (map show args) ++ "| {" ++ show expr ++ "}"
   show (RsMatch expr arms Nothing) = "match " ++ show expr ++ " {\n" ++ intercalate "\n" (map show arms) ++ "\n}"
   show (RsMatch expr arms (Just fallback)) = "match " ++ show expr ++ " {\n" ++ intercalate "\n" (map show arms) ++ "\n_ =>" ++ show fallback ++ "\n}"
+  show (RsVarRef ident) = show ident
 
 data RsStatement = RsSemi RsExpr | RsNoSemi RsExpr
 

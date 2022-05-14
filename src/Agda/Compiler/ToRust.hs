@@ -209,17 +209,19 @@ freshRustIdentifier = do
         setNameUsed ident
         return x
 
-compileFunction :: Definition -> Maybe RsItem
-compileFunction func = do
+compileFunction :: Definition -> [RsIdent] -> RsExpr -> Maybe RsItem
+compileFunction func argNames body = do
   let def = theDef func
   let name = getDataTypeName (defName func)
+  let args = map (\name -> RsArgument name (RsEnumType (RsIdent "Bool"))) argNames
   Just
     ( trace
-        (show (unEl (defType func)))
+        --        (show (unEl (defType func)))
+        (show argNames)
         ( RsFunction
             (RsIdent name)
-            (RsFunctionDecl [RsArgument (RsIdent "x") (RsEnumType (RsIdent "Bool"))] (Just (RsEnumType (RsIdent "Bool"))))
-            (RsBlock [])
+            (RsFunctionDecl args (Just (RsEnumType (RsIdent "Bool"))))
+            (RsBlock [RsNoSemi body])
         )
     )
 
@@ -237,7 +239,7 @@ instance ToRust Definition (Maybe RsItem) where
           Just body -> do
             body <- toRust body
             return case body of
-              RsClosure args body -> compileFunction def
+              RsClosure args body -> compileFunction def args body
               _ -> __IMPOSSIBLE__
           Nothing -> return Nothing
       Primitive {} -> return Nothing
@@ -280,18 +282,19 @@ instance ToRust (TTerm, [TTerm]) RsExpr where
       TDef d -> error ("Not implemented " ++ show w)
       TLam v -> withFreshVar $ \x -> do
         body <- toRust v
-        return (trace (show w) (RsClosure [RsIdent x] body))
+        return (RsClosure [RsIdent x] body)
       TLit l -> error ("Not implemented " ++ show w)
       TCon c -> error ("Not implemented " ++ show w)
       TLet u v -> error ("Not implemented " ++ show w)
       TCase i info v bs -> do
-        cases <- traverse toRust bs
+        cases <- trace (prettyShow w) (traverse toRust bs)
         cases <- mapM (return . RsArm (RsIdent "A()")) cases
+        var <- getVar i
         fallback <-
           if isUnreachable v
             then return Nothing
             else Just <$> toRust v
-        return (RsMatch (RsReturn Nothing) cases fallback)
+        return (RsMatch (RsVarRef var) cases fallback)
       TUnit -> error ("Not implemented " ++ show w)
       TSort -> error ("Not implemented " ++ show w)
       TErased -> error ("Not implemented " ++ show w)
