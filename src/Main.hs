@@ -2,10 +2,11 @@ module Main where
 
 import Agda.Compiler.Backend
 import Agda.Compiler.Common
-import Agda.Compiler.ToRust (RustOptions (RustOptions), ToRust (toRust), runToRustM)
 import Agda.Compiler.RustSyntax (RsItem)
+import Agda.Compiler.ToRust (RustOptions (RustOptions), ToRust (toRust), runToRustM)
 import Agda.Interaction.Options (OptDescr)
 import Agda.Main (runAgda)
+import Agda.Syntax.Treeless (EvaluationStrategy (EagerEvaluation))
 import Agda.Utils.Pretty (prettyShow)
 import Control.Monad.Reader (MonadIO (liftIO))
 import Data.List (intercalate)
@@ -13,7 +14,6 @@ import Data.Maybe (catMaybes)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import Prelude hiding (empty, null)
-import Agda.Syntax.Treeless (EvaluationStrategy(EagerEvaluation))
 
 main :: IO ()
 main = runAgda [backend]
@@ -51,4 +51,4 @@ rustPostModule :: RustOptions -> () -> IsMain -> ModuleName -> [Maybe RsItem] ->
 rustPostModule opts _ isMain modName defs = do
   let modText = intercalate "\n\n" $ map show (catMaybes defs)
       fileName = prettyShow (last $ mnameToList modName) ++ ".rs"
-  liftIO $ T.writeFile fileName (T.pack modText)
+  liftIO $ T.writeFile fileName (T.pack (modText ++ "\n\nfn main() {}"))

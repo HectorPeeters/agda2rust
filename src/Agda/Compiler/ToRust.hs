@@ -196,14 +196,14 @@ freshRustIdentifier = do
         return x
 
 lookupRustDef :: QName -> ToRustM (Maybe RsIdent)
-lookupRustDef n = trace ("LOOKUP " ++ prettyShow n) (gets (Map.lookup n . toRustDefs))
+lookupRustDef n = gets (Map.lookup n . toRustDefs)
 
 setRustDef :: QName -> RsIdent -> ToRustM ()
 setRustDef n a = modify $ \s -> s {toRustDefs = Map.insert n a (toRustDefs s)}
 
 newRustDef :: QName -> ToRustM RsIdent
 newRustDef n = do
-  trace ("NEW " ++ prettyShow n) (unlessM (isNothing <$> lookupRustDef n) __IMPOSSIBLE__)
+  unlessM (isNothing <$> lookupRustDef n) __IMPOSSIBLE__
   a <- makeRustName n
   setRustDef n a
   setNameUsed a
@@ -218,14 +218,10 @@ compileFunction func argNames body = do
   let name = generateFunctionName $ defName func
   let args = map (\name -> RsArgument name (RsEnumType (RsIdent "Bool"))) argNames
   Just
-    ( trace
-        --        (show (unEl (defType func)))
-        (show argNames)
-        ( RsFunction
-            (RsIdent name)
-            (RsFunctionDecl args (Just (RsEnumType (RsIdent "Bool"))))
-            (RsBlock [RsNoSemi body])
-        )
+    ( RsFunction
+        (RsIdent name)
+        (RsFunctionDecl args (Just (RsEnumType (RsIdent "Bool"))))
+        (RsBlock [RsNoSemi body])
     )
 
 instance ToRust Definition (Maybe RsItem) where
@@ -252,8 +248,8 @@ instance ToRust Definition (Maybe RsItem) where
       Datatype {dataCons = cons} -> do
         let name = RsIdent (getDataTypeName (head cons))
 
-        idents <- mapM newRustDef cons
-        variants <- mapM (return . RsVariant) idents
+        variantNames <- mapM makeRustName cons
+        variants <- mapM (return . RsVariant) variantNames
 
         return (Just (RsEnum name variants))
       Record {} -> return Nothing
@@ -295,7 +291,6 @@ instance ToRust (TTerm, [TTerm]) RsExpr where
       TLet u v -> error ("Not implemented " ++ show w)
       TCase i info v bs -> do
         cases <- traverse toRust bs
-        cases <- mapM (\x -> return (RsArm x x)) cases
         var <- getVar i
         fallback <-
           if isUnreachable v
@@ -307,16 +302,13 @@ instance ToRust (TTerm, [TTerm]) RsExpr where
       TErased -> error ("Not implemented " ++ show w)
       TError err -> error ("Not implemented " ++ show w)
 
-instance ToRust TAlt RsExpr where
+instance ToRust TAlt RsArm where
   toRust (TACon c nargs v) = do
-    c' :: RsIdent <- toRust c
-    toRust v
+    c' <- toRust c
+    result <- toRust v
+    return (RsArm (RsDataConstructor c' []) result)
   toRust TAGuard {} = __IMPOSSIBLE__
   toRust TALit {} = __IMPOSSIBLE__
 
 instance ToRust QName RsIdent where
-  toRust n = do
-    r <- lookupRustDef n
-    case r of
-      Nothing -> return (RsIdent "FAILED") --fail $ "unbound name " <> show (P.pretty n)
-      Just a -> return a
+  toRust n = do makeRustName n

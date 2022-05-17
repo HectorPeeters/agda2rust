@@ -81,7 +81,7 @@ data RsItem = RsEnum RsIdent [RsVariant] | RsFunction RsIdent RsFunctionDecl RsB
 
 instance Show RsItem where
   show (RsEnum ident variants) =
-    "use " ++ show ident ++ "::*;\nenum " ++ show ident
+    "use " ++ show ident ++ "::*;\n\n#[derive(Debug)]\nenum " ++ show ident
       ++ " {\n\t"
       ++ intercalate ",\n\t" (map show variants)
       ++ "\n}"
