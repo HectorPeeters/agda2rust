@@ -54,7 +54,8 @@ newtype RustOptions = RustOptions
 data ToRustState = ToRustState
   { toRustFresh :: [Text],
     toRustDefs :: Map QName RsIdent,
-    toRustUsedNames :: Set RsIdent
+    toRustUsedNames :: Set RsIdent,
+    toRustEnums :: Map QName [RsType]
   }
 
 data ToRustEnv = ToRustEnv
@@ -96,7 +97,8 @@ initToRustState =
   ToRustState
     { toRustFresh = freshVars,
       toRustDefs = Map.empty,
-      toRustUsedNames = reservedNames
+      toRustUsedNames = reservedNames,
+      toRustEnums = Map.empty
     }
 
 runToRustM :: RustOptions -> ToRustM a -> TCM a
@@ -245,7 +247,7 @@ instance ToRust Definition (Maybe RsItem) where
           Nothing -> return Nothing
       Primitive {} -> return Nothing
       PrimitiveSort {} -> return Nothing
-      Datatype {dataCons = cons} -> do
+      Datatype {dataCons = cons, dataMutual = mut} -> do
         let name = RsIdent (getDataTypeName (head cons))
 
         variantNames <- mapM makeRustName cons
@@ -303,9 +305,9 @@ instance ToRust TAlt RsArm where
   toRust (TACon c nargs v) = do
     c' <- toRust c
     result <- toRust v
-    return (RsArm (RsDataConstructor (RsIdent "Bool") c' []) result)
+    return (RsArm (RsDataConstructor (RsIdent (getDataTypeName c)) c' []) result)
   toRust TAGuard {} = __IMPOSSIBLE__
   toRust TALit {} = __IMPOSSIBLE__
 
-instance ToRust QName RsIdent where
-  toRust n = do makeRustName n
+instance ToRust QName RsIdent where 
+    toRust n = do makeRustName n
