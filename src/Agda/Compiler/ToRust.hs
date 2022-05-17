@@ -241,7 +241,7 @@ instance ToRust Definition (Maybe RsItem) where
             body <- toRust body
             return case body of
               RsClosure args body -> compileFunction def args body
-              _ -> __IMPOSSIBLE__
+              _ -> trace (show body) __IMPOSSIBLE__
           Nothing -> return Nothing
       Primitive {} -> return Nothing
       PrimitiveSort {} -> return Nothing
@@ -249,22 +249,19 @@ instance ToRust Definition (Maybe RsItem) where
         let name = RsIdent (getDataTypeName (head cons))
 
         variantNames <- mapM makeRustName cons
-        variants <- mapM (return . RsVariant) variantNames
+        variants <- mapM (\x -> return (RsVariant x [])) variantNames
 
         return (Just (RsEnum name variants))
       Record {} -> return Nothing
-      Constructor {conSrcCon = chead, conArity = nargs} -> return Nothing
-      -- NOTE: Right now the default constructor of the enum is used. This will not work with currying
-      -- Constructor {conSrcCon = chead, conArity = nargs} -> do
-      --   constructorName <- makeRustName (conName chead)
+      Constructor {conSrcCon = chead, conArity = nargs} -> do
+        constructorName <- makeRustName (conName chead)
 
-      --   let dataTypeName = RsIdent (getDataTypeName (conName chead))
-      --   let enumName = Just (RsEnumType dataTypeName)
-      --   let args = [] -- [RsArgument (RsIdent "x") (RsEnumType (RsIdent "Bool"))]
-      --   let body = RsBlock [RsSemi (RsReturn (Just (RsStruct dataTypeName [])))]
+        let dataTypeName = RsIdent (getDataTypeName (conName chead))
+        let enumName = Just (RsEnumType dataTypeName)
+        let args = [] -- [RsArgument (RsIdent "x") (RsEnumType (RsIdent "Bool"))]
+        let body = RsBlock [RsNoSemi (RsDataConstructor dataTypeName constructorName [])]
 
-      --   -- TODO: add arguments and body
-      --   return (Just (RsFunction constructorName (RsFunctionDecl args enumName) body))
+        return (Just (RsFunction constructorName (RsFunctionDecl args enumName) body))
       AbstractDefn {} -> __IMPOSSIBLE__
       DataOrRecSig {} -> __IMPOSSIBLE__
 
@@ -287,7 +284,7 @@ instance ToRust (TTerm, [TTerm]) RsExpr where
       TLit l -> error ("Not implemented " ++ show w)
       TCon c -> do
         name <- toRust c
-        return (RsDataConstructor name [])
+        return (RsFunctionCall name [])
       TLet u v -> error ("Not implemented " ++ show w)
       TCase i info v bs -> do
         cases <- traverse toRust bs
@@ -306,7 +303,7 @@ instance ToRust TAlt RsArm where
   toRust (TACon c nargs v) = do
     c' <- toRust c
     result <- toRust v
-    return (RsArm (RsDataConstructor c' []) result)
+    return (RsArm (RsDataConstructor (RsIdent "Bool") c' []) result)
   toRust TAGuard {} = __IMPOSSIBLE__
   toRust TALit {} = __IMPOSSIBLE__
 

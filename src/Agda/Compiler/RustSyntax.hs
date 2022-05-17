@@ -11,10 +11,10 @@ newtype RsIdent = RsIdent Text deriving (Eq, Ord)
 instance Show RsIdent where
   show (RsIdent x) = T.unpack x
 
-newtype RsVariant = RsVariant RsIdent
+data RsVariant = RsVariant RsIdent [RsIdent]
 
 instance Show RsVariant where
-  show (RsVariant ident) = show ident ++ "()"
+  show (RsVariant ident types) = show ident ++ "(" ++ intercalate ", " (map show types) ++ ")"
 
 newtype RsType = RsEnumType RsIdent
 
@@ -55,7 +55,8 @@ data RsExpr
   | RsMatch RsExpr [RsArm] (Maybe RsExpr)
   | -- NOTE: this should techinically be a Path but lets try and avoid those for now
     RsVarRef RsIdent
-  | RsDataConstructor RsIdent [RsExpr]
+  | RsDataConstructor RsIdent RsIdent [RsExpr]
+  | RsFunctionCall RsIdent [RsExpr]
 
 instance Show RsExpr where
   show (RsReturn Nothing) = "return"
@@ -64,7 +65,8 @@ instance Show RsExpr where
   show (RsMatch expr arms Nothing) = "match " ++ show expr ++ " {\n" ++ intercalate "\n" (map show arms) ++ "\n}"
   show (RsMatch expr arms (Just fallback)) = "match " ++ show expr ++ " {\n" ++ intercalate "\n" (map show arms) ++ "\n_ =>" ++ show fallback ++ "\n}"
   show (RsVarRef ident) = show ident
-  show (RsDataConstructor name args) = show name ++ "(" ++ intercalate ", " (map show args) ++ ")"
+  show (RsDataConstructor name variantName args) = show name ++ "::" ++ show variantName ++ "(" ++ intercalate ", " (map show args) ++ ")"
+  show (RsFunctionCall name args) = show name ++ "(" ++ intercalate ", " (map show args) ++ ")"
 
 data RsStatement = RsSemi RsExpr | RsNoSemi RsExpr
 
@@ -81,7 +83,7 @@ data RsItem = RsEnum RsIdent [RsVariant] | RsFunction RsIdent RsFunctionDecl RsB
 
 instance Show RsItem where
   show (RsEnum ident variants) =
-    "use " ++ show ident ++ "::*;\n\n#[derive(Debug)]\nenum " ++ show ident
+    "#[derive(Debug)]\nenum " ++ show ident
       ++ " {\n\t"
       ++ intercalate ",\n\t" (map show variants)
       ++ "\n}"
