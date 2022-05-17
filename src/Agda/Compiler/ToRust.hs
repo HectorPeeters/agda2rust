@@ -18,9 +18,10 @@ import Agda.Utils.Impossible (__IMPOSSIBLE__)
 import Agda.Utils.Lens
 import Agda.Utils.List
 import Agda.Utils.Maybe
-import Agda.Utils.Monad
+import Agda.Utils.Monad (ifM, unlessM)
 import Agda.Utils.Null
 import Agda.Utils.Pretty
+import qualified Agda.Utils.Pretty as P
 import Agda.Utils.Singleton
 import Control.DeepSeq (NFData)
 import Control.Monad
@@ -107,21 +108,8 @@ getEvaluationStrategy = reader $ rustEvaluation . toRustOptions
 class ToRust a b where
   toRust :: a -> ToRustM b
 
-instance ToRust QName RsIdent where
-  toRust n = do
-    r <- gets (Map.lookup n . toRustDefs)
-    case r of
-      Nothing -> makeRustName n
-      Just a -> return a
-
-saveDefName :: QName -> RsIdent -> ToRustM ()
-saveDefName n a = modify $ \s -> s {toRustDefs = Map.insert n a (toRustDefs s)}
-
 isNameUsed :: RsIdent -> ToRustM Bool
 isNameUsed x = gets (Set.member x . toRustUsedNames)
-
-getName :: QName -> ToRustM RsIdent
-getName x = gets (\y -> (Map.!) (toRustDefs y) x)
 
 setNameUsed :: RsIdent -> ToRustM ()
 setNameUsed x = modify $ \s ->
@@ -163,8 +151,6 @@ fourBitsToChar i = "0123456789ABCDEF" !! i
 makeRustName :: QName -> ToRustM RsIdent
 makeRustName n = do
   a <- go $ T.pack $ fixName $ prettyShow $ qnameName n
-  saveDefName n (RsIdent a)
-  setNameUsed (RsIdent a)
   return (RsIdent a)
   where
     nextName x = T.pack ('z' : T.unpack x) -- TODO: do something smarter
@@ -209,6 +195,20 @@ freshRustIdentifier = do
         setNameUsed ident
         return x
 
+lookupRustDef :: QName -> ToRustM (Maybe RsIdent)
+lookupRustDef n = trace ("LOOKUP " ++ prettyShow n) (gets (Map.lookup n . toRustDefs))
+
+setRustDef :: QName -> RsIdent -> ToRustM ()
+setRustDef n a = modify $ \s -> s {toRustDefs = Map.insert n a (toRustDefs s)}
+
+newRustDef :: QName -> ToRustM RsIdent
+newRustDef n = do
+  trace ("NEW " ++ prettyShow n) (unlessM (isNothing <$> lookupRustDef n) __IMPOSSIBLE__)
+  a <- makeRustName n
+  setRustDef n a
+  setNameUsed a
+  return a
+
 generateFunctionName :: QName -> Text
 generateFunctionName = replace "." "_" . T.pack . prettyShow
 
@@ -233,7 +233,9 @@ instance ToRust Definition (Maybe RsItem) where
   toRust def = do
     let f = defName def
     case theDef def of
-      Axiom {} -> return Nothing
+      Axiom {} -> do
+        --        f' <- newRustDef f
+        return Nothing
       GeneralizableVar {} -> return Nothing
       Function {} -> do
         strat <- getEvaluationStrategy
@@ -250,7 +252,7 @@ instance ToRust Definition (Maybe RsItem) where
       Datatype {dataCons = cons} -> do
         let name = RsIdent (getDataTypeName (head cons))
 
-        idents <- mapM makeRustName cons
+        idents <- mapM newRustDef cons
         variants <- mapM (return . RsVariant) idents
 
         return (Just (RsEnum name variants))
@@ -287,11 +289,13 @@ instance ToRust (TTerm, [TTerm]) RsExpr where
         body <- toRust v
         return (RsClosure [RsIdent x] body)
       TLit l -> error ("Not implemented " ++ show w)
-      TCon c -> error ("Not implemented " ++ show w)
+      TCon c -> do
+        name <- toRust c
+        return (RsDataConstructor name [])
       TLet u v -> error ("Not implemented " ++ show w)
       TCase i info v bs -> do
-        cases <- trace (prettyShow w) (traverse toRust bs)
-        cases <- mapM (return . RsArm (RsIdent "A()")) cases
+        cases <- traverse toRust bs
+        cases <- mapM (\x -> return (RsArm x x)) cases
         var <- getVar i
         fallback <-
           if isUnreachable v
@@ -304,4 +308,15 @@ instance ToRust (TTerm, [TTerm]) RsExpr where
       TError err -> error ("Not implemented " ++ show w)
 
 instance ToRust TAlt RsExpr where
-  toRust a = return (RsReturn Nothing)
+  toRust (TACon c nargs v) = do
+    c' :: RsIdent <- toRust c
+    toRust v
+  toRust TAGuard {} = __IMPOSSIBLE__
+  toRust TALit {} = __IMPOSSIBLE__
+
+instance ToRust QName RsIdent where
+  toRust n = do
+    r <- lookupRustDef n
+    case r of
+      Nothing -> return (RsIdent "FAILED") --fail $ "unbound name " <> show (P.pretty n)
+      Just a -> return a
