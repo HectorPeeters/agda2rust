@@ -262,8 +262,6 @@ instance ToRust Definition [RsItem] where
       Function {} -> do
         strat <- getEvaluationStrategy
         maybeCompiled <- liftTCM $ toTreeless strat f
-        liftIO do
-          print (extractTypes (unEl (defType def)))
         case maybeCompiled of
           Just tl -> do
             body <- toRust tl

@@ -70,13 +70,44 @@ data RsItem = RsEnum RsIdent [RsVariant] | RsFunction RsIdent [RsType] (Maybe Rs
 
 instance Show RsItem where
   show (RsEnum ident variants) =
-    "use " ++ show ident ++ "::*;\n#[derive(Debug)]\nenum " ++ show ident
+    "use " ++ show ident ++ "::*;\n\n#[derive(Debug)]\nenum " ++ show ident
       ++ " {\n\t"
       ++ intercalate ",\n\t" (map show variants)
       ++ "\n}"
   show (RsFunction ident args (Just ret) body) = do
-    let firstCurryType = "type " ++ show ident ++ "0 = impl FnOnce(" ++ show (head args) ++ ") -> " ++ show ret ++ ";\n"
-    let restCurryLines = zipWith (\i a -> "type " ++ show ident ++ show i ++ " = impl FnOnce(" ++ show a ++ ") -> " ++ show ident ++ show (i - 1) ++ ";") [1 ..] (tail args)
+    -- TODO: we can't just assume that all single letter types are generics
+    let genericArgs = "<" ++ intercalate ", " (map show (filter (\x -> length (show x) == 1) args)) ++ ">"
+
+    let firstCurryType =
+          "type " ++ show ident ++ "0" ++ genericArgs
+            ++ " = impl FnOnce("
+            ++ show (head args)
+            ++ ") -> "
+            ++ show ret
+            ++ ";\n"
+    let restCurryLines =
+          zipWith
+            ( \i a ->
+                "type "
+                  ++ show ident
+                  ++ show i
+                  ++ " = impl FnOnce("
+                  ++ show a
+                  ++ ") -> "
+                  ++ show ident
+                  ++ show (i - 1)
+                  ++ ";"
+            )
+            [1 ..]
+            (tail args)
     let curryTypes = firstCurryType ++ intercalate "\n" restCurryLines
 
-    curryTypes ++ "\n\nfn " ++ show ident ++ "() -> " ++ show ident ++ show (length args - 1) ++ show body
+    curryTypes
+      ++ "\n\nfn "
+      ++ show ident
+      ++ genericArgs
+      ++ "() -> "
+      ++ show ident
+      ++ show (length args - 1)
+      ++ genericArgs
+      ++ show body
