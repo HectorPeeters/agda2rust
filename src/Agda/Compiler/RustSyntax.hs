@@ -53,7 +53,7 @@ instance Show RsExpr where
   show (RsMatch expr arms (Just fallback)) = "match " ++ show expr ++ " {\n" ++ intercalate "\n" (map show arms) ++ "\n_ =>" ++ show fallback ++ "\n}"
   show (RsVarRef ident) = show ident
   show (RsDataConstructor name variantName args) = show name ++ "::" ++ show variantName ++ "(" ++ intercalate ", " (map show args) ++ ")"
-  show (RsFunctionCall name args) = show name ++ "(" ++ intercalate ", " (map show args) ++ ")"
+  show (RsFunctionCall name args) = show name ++ "()" ++ intercalate "" (map (\x -> "(" ++ show x ++ ")") args)
 
 data RsStatement = RsSemi RsExpr | RsNoSemi RsExpr
 
