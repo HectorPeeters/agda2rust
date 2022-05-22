@@ -19,7 +19,7 @@ data RsVariant = RsVariant RsIdent [RsIdent]
 instance Show RsVariant where
   show (RsVariant ident types) = show ident ++ "(" ++ intercalate ", " (map show types) ++ ")"
 
-newtype RsType = RsEnumType RsIdent
+newtype RsType = RsEnumType RsIdent deriving (Eq)
 
 instance Show RsType where
   show (RsEnumType ident) = show ident
@@ -68,16 +68,26 @@ instance Show RsBlock where
 
 data RsItem = RsEnum RsIdent [RsVariant] | RsFunction RsIdent [RsType] (Maybe RsType) RsBlock
 
+unique :: Eq a => [a] -> [a]
+unique [] = []
+unique (x : xs) = x : unique (filter (x /=) xs)
+
 instance Show RsItem where
   show (RsEnum ident variants) =
     "use " ++ show ident ++ "::*;\n\n#[derive(Debug)]\nenum " ++ show ident
       ++ " {\n\t"
       ++ intercalate ",\n\t" (map show variants)
       ++ "\n}"
-  show (RsFunction ident args (Just ret) body) = do
-    -- TODO: we can't just assume that all single letter types are generics
-    let genericArgs = "<" ++ intercalate ", " (map show (filter (\x -> length (show x) == 1) args)) ++ ">"
+  show (RsFunction ident as (Just ret) body) = do
+    -- we are generiting the curry type definitions in reverse order
+    let args = reverse as
 
+    -- TODO: we can't just assume that all single letter types are generics
+    -- lets create a list of all the generic arguments in the current function
+    -- this is done by filtering all the unique arguments and checking if their length is 1
+    let genericArgs = "<" ++ intercalate ", " (map show (filter (\x -> length (show x) == 1) (unique args))) ++ ">"
+
+    -- lets create the last curry type which returns the final value of the function
     let firstCurryType =
           "type " ++ show ident ++ "0" ++ genericArgs
             ++ " = impl FnOnce("
@@ -85,21 +95,27 @@ instance Show RsItem where
             ++ ") -> "
             ++ show ret
             ++ ";\n"
+
+    -- lets create all the intermediate curry types
     let restCurryLines =
           zipWith
             ( \i a ->
                 "type "
                   ++ show ident
                   ++ show i
+                  ++ genericArgs
                   ++ " = impl FnOnce("
                   ++ show a
                   ++ ") -> "
                   ++ show ident
                   ++ show (i - 1)
+                  ++ genericArgs
                   ++ ";"
             )
             [1 ..]
             (tail args)
+
+    -- combine all the curry types into a string
     let curryTypes = firstCurryType ++ intercalate "\n" restCurryLines
 
     curryTypes

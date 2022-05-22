@@ -220,6 +220,7 @@ removeLastItem (x : xs) = x : removeLastItem xs
 
 extractTypes :: Term -> [RsIdent]
 extractTypes x = case x of
+  Var n _ -> [RsIdent (T.pack (['A' ..] !! n : []))]
   Def name _ -> [RsIdent $ T.pack $ prettyShow $ qnameName name]
   Pi dom abs -> do
     let first = extractTypes $ unEl $ unDom dom
