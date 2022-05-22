@@ -1,5 +1,6 @@
 module Agda.Compiler.ToRust where
 
+import Agda.Compiler.Backend (TTerm)
 import Agda.Compiler.Common
 import Agda.Compiler.RustSyntax
 import Agda.Compiler.ToTreeless (toTreeless)
@@ -55,7 +56,7 @@ data ToRustState = ToRustState
   { toRustFresh :: [Text],
     toRustDefs :: Map QName RsIdent,
     toRustUsedNames :: Set RsIdent,
-    toRustEnums :: Map QName [RsType]
+    toRustEnums :: [RsVariant]
   }
 
 data ToRustEnv = ToRustEnv
@@ -70,6 +71,9 @@ initToRustEnv opts = ToRustEnv opts []
 
 addBinding :: RsIdent -> ToRustEnv -> ToRustEnv
 addBinding x env = env {toRustVars = x : toRustVars env}
+
+getVarName :: Int -> ToRustM RsIdent
+getVarName i = reader $ (!! i) . toRustVars
 
 reservedNames :: Set RsIdent
 reservedNames =
@@ -98,7 +102,7 @@ initToRustState =
     { toRustFresh = freshVars,
       toRustDefs = Map.empty,
       toRustUsedNames = reservedNames,
-      toRustEnums = Map.empty
+      toRustEnums = []
     }
 
 runToRustM :: RustOptions -> ToRustM a -> TCM a
@@ -197,75 +201,101 @@ freshRustIdentifier = do
         setNameUsed ident
         return x
 
-lookupRustDef :: QName -> ToRustM (Maybe RsIdent)
-lookupRustDef n = gets (Map.lookup n . toRustDefs)
+addRustEnumVariant :: RsVariant -> ToRustM ()
+addRustEnumVariant variant = modify $ \s -> s {toRustEnums = variant : toRustEnums s}
 
-setRustDef :: QName -> RsIdent -> ToRustM ()
-setRustDef n a = modify $ \s -> s {toRustDefs = Map.insert n a (toRustDefs s)}
-
-newRustDef :: QName -> ToRustM RsIdent
-newRustDef n = do
-  unlessM (isNothing <$> lookupRustDef n) __IMPOSSIBLE__
-  a <- makeRustName n
-  setRustDef n a
-  setNameUsed a
-  return a
+--clearAndGetEnumVariants :: ToRustM [RsVariant]
+--clearAndGetEnumVariants = do
+--  variants <- gets toRustEnums
+--  modify $ \s -> s {toRustEnums = []}
+--  return variants
 
 generateFunctionName :: QName -> Text
 generateFunctionName = replace "." "_" . T.pack . prettyShow
 
-compileFunction :: Definition -> [RsIdent] -> RsExpr -> Maybe RsItem
-compileFunction func argNames body = do
+removeLastItem :: [a] -> [a]
+removeLastItem [] = []
+removeLastItem [x] = []
+removeLastItem (x : xs) = x : removeLastItem xs
+
+extractTypes :: Term -> [RsIdent]
+extractTypes x = case x of
+  Def name _ -> [RsIdent $ T.pack $ prettyShow $ qnameName name]
+  Pi dom abs -> do
+    let first = extractTypes $ unEl $ unDom dom
+    let rest = extractTypes $ unEl $ unAbs abs
+    first ++ rest
+  _ -> trace ("NOT IMPLEMENTED " ++ show x) []
+
+compileFunction :: Definition -> TTerm -> RsExpr -> [RsItem]
+compileFunction func tl body = do
   let def = theDef func
   let name = generateFunctionName $ defName func
-  let args = map (\name -> RsArgument name (RsEnumType (RsIdent "Bool"))) argNames
-  Just
-    ( RsFunction
-        (RsIdent name)
-        (RsFunctionDecl args (Just (RsEnumType (RsIdent "Bool"))))
-        (RsBlock [RsNoSemi body])
-    )
+  let args = extractTypes $ unEl $ defType func
+  let arguments = map RsEnumType (removeLastItem args)
+  let return = Just $ RsEnumType $ last args
+  [ RsFunction
+      (RsIdent name)
+      arguments
+      return
+      (RsBlock [RsNoSemi body])
+    ]
 
-instance ToRust Definition (Maybe RsItem) where
-  toRust def | defNoCompilation def || not (usableModality $ getModality def) = return Nothing
+instance ToRust Definition [RsItem] where
+  toRust def
+    | defNoCompilation def || not (usableModality $ getModality def) = return []
   toRust def = do
     let f = defName def
-    case theDef def of
+
+    leftoverVariants <- case theDef def of
+      Constructor {} -> return []
+      _ -> do
+        variants <- gets toRustEnums
+
+        return [RsEnum (RsIdent "Test") variants]
+
+    rustDefinition <- case theDef def of
       Axiom {} -> do
         --        f' <- newRustDef f
-        return Nothing
-      GeneralizableVar {} -> return Nothing
+        return []
+      GeneralizableVar {} -> return []
       Function {} -> do
         strat <- getEvaluationStrategy
         maybeCompiled <- liftTCM $ toTreeless strat f
+        liftIO do
+          print (extractTypes (unEl (defType def)))
         case maybeCompiled of
-          Just body -> do
-            body <- toRust body
-            return case body of
-              RsClosure args body -> compileFunction def args body
-              _ -> trace (show body) __IMPOSSIBLE__
-          Nothing -> return Nothing
-      Primitive {} -> return Nothing
-      PrimitiveSort {} -> return Nothing
+          Just tl -> do
+            body <- toRust tl
+            return (compileFunction def tl body)
+          Nothing -> return []
+      Primitive {} -> return []
+      PrimitiveSort {} -> return []
       Datatype {dataCons = cons, dataMutual = mut} -> do
         let name = RsIdent (getDataTypeName (head cons))
 
         variantNames <- mapM makeRustName cons
         variants <- mapM (\x -> return (RsVariant x [])) variantNames
 
-        return (Just (RsEnum name variants))
-      Record {} -> return Nothing
-      Constructor {conSrcCon = chead, conArity = nargs} -> do
-        constructorName <- makeRustName (conName chead)
+        return [RsEnum name variants]
+      Record {} -> return []
+      Constructor {conSrcCon = chead, conArity = nargs} -> do return []
+      --constructorName <- makeRustName (conName chead)
 
-        let dataTypeName = RsIdent (getDataTypeName (conName chead))
-        let enumName = Just (RsEnumType dataTypeName)
-        let args = [] -- [RsArgument (RsIdent "x") (RsEnumType (RsIdent "Bool"))]
-        let body = RsBlock [RsNoSemi (RsDataConstructor dataTypeName constructorName [])]
+      --addRustEnumVariant (RsVariant constructorName [])
 
-        return (Just (RsFunction constructorName (RsFunctionDecl args enumName) body))
+      --let dataTypeName = RsIdent (getDataTypeName (conName chead))
+      --let enumName = Just (RsEnumType dataTypeName)
+      --let args = [] -- [RsArgument (RsIdent "x") (RsEnumType (RsIdent "Bool"))]
+      --let body = RsBlock [RsNoSemi (RsDataConstructor dataTypeName constructorName [])]
+
+      --return [RsFunction constructorName (RsFunctionDecl args enumName) body]
       AbstractDefn {} -> __IMPOSSIBLE__
       DataOrRecSig {} -> __IMPOSSIBLE__
+
+    return ([] ++ rustDefinition)
+
+-- return (leftoverVariants ++ rustDefinition)
 
 instance ToRust TTerm RsExpr where
   toRust v = do
@@ -277,9 +307,13 @@ instance ToRust (TTerm, [TTerm]) RsExpr where
   toRust (w, args) = do
     -- args <- traverse toRust args
     case w of
-      TVar i -> error ("Not implemented " ++ show w)
+      TVar i -> do
+        name <- getVarName i
+        return (RsVarRef name)
       TPrim p -> error ("Not implemented " ++ show w)
-      TDef d -> error ("Not implemented " ++ show w)
+      TDef d -> do
+        name <- makeRustName d
+        return (RsVarRef name)
       TLam v -> withFreshVar $ \x -> do
         body <- toRust v
         return (RsClosure [RsIdent x] body)
@@ -309,5 +343,5 @@ instance ToRust TAlt RsArm where
   toRust TAGuard {} = __IMPOSSIBLE__
   toRust TALit {} = __IMPOSSIBLE__
 
-instance ToRust QName RsIdent where 
-    toRust n = do makeRustName n
+instance ToRust QName RsIdent where
+  toRust n = do makeRustName n

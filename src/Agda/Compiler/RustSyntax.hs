@@ -1,10 +1,13 @@
 module Agda.Compiler.RustSyntax where
 
 import Data.List (intercalate)
+import Data.Sequence (mapWithIndex)
 import Data.Text (Text)
 import qualified Data.Text as T
 
 -- Based on: https://hackage.haskell.org/package/flp-0.1.0.0/docs/src/Language.Rust.Syntax.AST.html
+
+rustPrelude = "#![feature(type_alias_impl_trait)]\n\n"
 
 newtype RsIdent = RsIdent Text deriving (Eq, Ord)
 
@@ -20,22 +23,6 @@ newtype RsType = RsEnumType RsIdent
 
 instance Show RsType where
   show (RsEnumType ident) = show ident
-
-data RsArgument = RsArgument RsIdent RsType
-
-instance Show RsArgument where
-  show (RsArgument ident ty) = show ident ++ ": " ++ show ty
-
-data RsFunctionDecl = RsFunctionDecl [RsArgument] (Maybe RsType)
-
-instance Show RsFunctionDecl where
-  show (RsFunctionDecl args Nothing) =
-    "(" ++ intercalate ", " (map show args)
-      ++ ")"
-  show (RsFunctionDecl args (Just returnRsType)) =
-    "(" ++ intercalate ", " (map show args)
-      ++ ") -> "
-      ++ show returnRsType
 
 data RsField = RsField RsIdent RsExpr
 
@@ -61,7 +48,7 @@ data RsExpr
 instance Show RsExpr where
   show (RsReturn Nothing) = "return"
   show (RsReturn (Just expr)) = "return " ++ show expr
-  show (RsClosure args expr) = "|" ++ intercalate ", " (map show args) ++ "| {" ++ show expr ++ "}"
+  show (RsClosure args expr) = "(move |" ++ intercalate ", " (map show args) ++ "| {" ++ show expr ++ "})"
   show (RsMatch expr arms Nothing) = "match " ++ show expr ++ " {\n" ++ intercalate "\n" (map show arms) ++ "\n}"
   show (RsMatch expr arms (Just fallback)) = "match " ++ show expr ++ " {\n" ++ intercalate "\n" (map show arms) ++ "\n_ =>" ++ show fallback ++ "\n}"
   show (RsVarRef ident) = show ident
@@ -79,12 +66,17 @@ newtype RsBlock = RsBlock [RsStatement]
 instance Show RsBlock where
   show (RsBlock stmts) = "{\n\t" ++ intercalate "\n\t" (map show stmts) ++ "\n}"
 
-data RsItem = RsEnum RsIdent [RsVariant] | RsFunction RsIdent RsFunctionDecl RsBlock
+data RsItem = RsEnum RsIdent [RsVariant] | RsFunction RsIdent [RsType] (Maybe RsType) RsBlock
 
 instance Show RsItem where
   show (RsEnum ident variants) =
-    "#[derive(Debug)]\nenum " ++ show ident
+    "use " ++ show ident ++ "::*;\n#[derive(Debug)]\nenum " ++ show ident
       ++ " {\n\t"
       ++ intercalate ",\n\t" (map show variants)
       ++ "\n}"
-  show (RsFunction ident decl body) = "fn " ++ show ident ++ show decl ++ " " ++ show body
+  show (RsFunction ident args (Just ret) body) = do
+    let firstCurryType = "type " ++ show ident ++ "0 = impl FnOnce(" ++ show (head args) ++ ") -> " ++ show ret ++ ";\n"
+    let restCurryLines = zipWith (\i a -> "type " ++ show ident ++ show i ++ " = impl FnOnce(" ++ show a ++ ") -> " ++ show ident ++ show (i - 1) ++ ";") [1 ..] (tail args)
+    let curryTypes = firstCurryType ++ intercalate "\n" restCurryLines
+
+    curryTypes ++ "\n\nfn " ++ show ident ++ "() -> " ++ show ident ++ show (length args - 1) ++ show body
