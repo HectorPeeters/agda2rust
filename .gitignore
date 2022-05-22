@@ -12,5 +12,6 @@ MAlonzo
 
 *.agda
 *.rs
+test
 .vscode/
 .stack-work/
