@@ -218,23 +218,24 @@ removeLastItem [] = []
 removeLastItem [x] = []
 removeLastItem (x : xs) = x : removeLastItem xs
 
-extractTypes :: Term -> [RsIdent]
+extractTypes :: Term -> [RsType]
 extractTypes x = case x of
-  Var n _ -> [RsIdent (T.pack (['A' ..] !! n : []))]
-  Def name _ -> [RsIdent $ T.pack $ prettyShow $ qnameName name]
+  Sort _ -> [RsNone]
+  Var n _ -> [RsEnumType $ RsIdent $ T.pack [['A' ..] !! n]]
+  Def name _ -> [RsEnumType $ RsIdent $ T.pack $ prettyShow $ qnameName name]
   Pi dom abs -> do
     let first = extractTypes $ unEl $ unDom dom
     let rest = extractTypes $ unEl $ unAbs abs
     first ++ rest
-  _ -> trace ("NOT IMPLEMENTED " ++ show x) []
+  _ -> trace ("NOT IMPLEMENTED " ++ show x ++ "\t\t" ++ prettyShow x) []
 
 compileFunction :: Definition -> TTerm -> RsExpr -> [RsItem]
 compileFunction func tl body = do
   let def = theDef func
   let name = generateFunctionName $ defName func
   let args = extractTypes $ unEl $ defType func
-  let arguments = map RsEnumType (removeLastItem args)
-  let return = Just $ RsEnumType $ last args
+  let arguments = removeLastItem args
+  let return = Just $ last args
   [ RsFunction
       (RsIdent name)
       arguments

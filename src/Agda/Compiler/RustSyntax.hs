@@ -19,10 +19,11 @@ data RsVariant = RsVariant RsIdent [RsIdent]
 instance Show RsVariant where
   show (RsVariant ident types) = show ident ++ "(" ++ intercalate ", " (map show types) ++ ")"
 
-newtype RsType = RsEnumType RsIdent deriving (Eq)
+data RsType = RsEnumType RsIdent | RsNone deriving (Eq)
 
 instance Show RsType where
   show (RsEnumType ident) = show ident
+  show RsNone = "()"
 
 data RsField = RsField RsIdent RsExpr
 
