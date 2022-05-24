@@ -79,6 +79,13 @@ instance Show RsItem where
       ++ " {\n\t"
       ++ intercalate ",\n\t" (map show variants)
       ++ "\n}"
+  show (RsFunction ident [] (Just ret) body) =
+    do
+      "fn "
+      ++ show ident
+      ++ "() -> "
+      ++ show ret
+      ++ show body
   show (RsFunction ident as (Just ret) body) = do
     -- we are generiting the curry type definitions in reverse order
     let args = reverse as
