@@ -250,11 +250,11 @@ instance ToRust Definition [RsItem] where
     let f = defName def
 
     leftoverVariants <- case theDef def of
-      Constructor {} -> return []
-      _ -> do
-        variants <- gets toRustEnums
-
-        return [RsEnum (RsIdent "Test") variants]
+      Constructor {} -> return defName []
+    --      _ -> do
+    --        variants <- gets toRustEnums
+    --
+    --        return [RsEnum (RsIdent "Test") variants | not (null variants)]
 
     rustDefinition <- case theDef def of
       Axiom {} -> do
@@ -271,31 +271,29 @@ instance ToRust Definition [RsItem] where
           Nothing -> return []
       Primitive {} -> return []
       PrimitiveSort {} -> return []
-      Datatype {dataCons = cons, dataMutual = mut} -> do
-        let name = RsIdent (getDataTypeName (head cons))
+      Datatype {dataCons = cons, dataMutual = mut} -> do return []
+      -- let name = RsIdent (getDataTypeName (head cons))
 
-        variantNames <- mapM makeRustName cons
-        variants <- mapM (\x -> return (RsVariant x [])) variantNames
+      -- variantNames <- mapM makeRustName cons
+      -- variants <- mapM (\x -> return (RsVariant x [])) variantNames
 
-        return [RsEnum name variants]
+      -- return [RsEnum name variants]
       Record {} -> return []
-      Constructor {conSrcCon = chead, conArity = nargs} -> do return []
-      --constructorName <- makeRustName (conName chead)
+      Constructor {conSrcCon = chead, conArity = nargs} -> do
+        constructorName <- makeRustName (conName chead)
 
-      --addRustEnumVariant (RsVariant constructorName [])
+        addRustEnumVariant (RsVariant constructorName [])
 
-      --let dataTypeName = RsIdent (getDataTypeName (conName chead))
-      --let enumName = Just (RsEnumType dataTypeName)
-      --let args = [] -- [RsArgument (RsIdent "x") (RsEnumType (RsIdent "Bool"))]
-      --let body = RsBlock [RsNoSemi (RsDataConstructor dataTypeName constructorName [])]
+        let dataTypeName = RsIdent (getDataTypeName (conName chead))
+        let enumName = Just (RsEnumType dataTypeName)
+        let args = []
+        let body = RsBlock [RsNoSemi (RsDataConstructor dataTypeName constructorName [])]
 
-      --return [RsFunction constructorName (RsFunctionDecl args enumName) body]
+        return [RsFunction constructorName args enumName body]
       AbstractDefn {} -> __IMPOSSIBLE__
       DataOrRecSig {} -> __IMPOSSIBLE__
 
-    return ([] ++ rustDefinition)
-
--- return (leftoverVariants ++ rustDefinition)
+    return (leftoverVariants ++ rustDefinition)
 
 instance ToRust TTerm RsExpr where
   toRust v = do

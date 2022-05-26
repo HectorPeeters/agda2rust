@@ -49,7 +49,7 @@ data RsExpr
 instance Show RsExpr where
   show (RsReturn Nothing) = "return"
   show (RsReturn (Just expr)) = "return " ++ show expr
-  show (RsClosure args expr) = "(move |" ++ intercalate ", " (map show args) ++ "| {" ++ show expr ++ "})"
+  show (RsClosure args expr) = "move |" ++ intercalate ", " (map show args) ++ "| {" ++ show expr ++ "}"
   show (RsMatch expr arms Nothing) = "match " ++ show expr ++ " {\n" ++ intercalate "\n" (map show arms) ++ "\n}"
   show (RsMatch expr arms (Just fallback)) = "match " ++ show expr ++ " {\n" ++ intercalate "\n" (map show arms) ++ "\n_ =>" ++ show fallback ++ "\n}"
   show (RsVarRef ident) = show ident
