@@ -139,7 +139,7 @@ rustAllowedUnicodeCats =
 
 isValidRustChar :: Char -> Bool
 isValidRustChar x
-  | isAscii x = isAlphaNum x
+  | isAscii x = isAlphaNum x || x == '_'
   | otherwise = generalCategory x `Set.member` rustAllowedUnicodeCats
 
 fourBitsToChar :: Int -> Char
@@ -176,6 +176,11 @@ withFreshVar f = do
   strat <- getEvaluationStrategy
   withFreshVar' strat f
 
+withFreshVars :: Int -> ([Text] -> ToRustM a) -> ToRustM a
+withFreshVars i f
+  | i <= 0 = f []
+  | otherwise = withFreshVar $ \x -> withFreshVars (i - 1) (f . (x :))
+
 withFreshVar' :: EvaluationStrategy -> (Text -> ToRustM a) -> ToRustM a
 withFreshVar' strat f = do
   x <- freshRustIdentifier
@@ -194,8 +199,8 @@ freshRustIdentifier = do
         setNameUsed ident
         return x
 
-generateFunctionName :: QName -> Text
-generateFunctionName = replace "." "_" . T.pack . prettyShow
+getFunctionName :: QName -> Text
+getFunctionName = replace "." "_" . T.pack . prettyShow
 
 removeLastItem :: [a] -> [a]
 removeLastItem []     = []
@@ -214,20 +219,20 @@ extractTypes x =
       first ++ rest
     _ -> trace ("NOT IMPLEMENTED " ++ show x ++ "\t\t" ++ prettyShow x) []
 
-compileFunction :: Definition -> TTerm -> RsExpr -> [RsItem]
+compileFunction :: Definition -> TTerm -> RsExpr -> ToRustM [RsItem]
 compileFunction func tl body = do
   let def = theDef func
-  let name = generateFunctionName $ defName func
+  -- makeRustName $ defName
+  name <- makeRustName (defName func)
   let args = extractTypes $ unEl $ defType func
   let arguments = removeLastItem args
-  let return = Just $ last args
-  [RsFunction (RsIdent name) arguments return (RsBlock [RsNoSemi body])]
+  let ret = Just $ last args
+  return [RsFunction (name) arguments ret (RsBlock [RsNoSemi body])]
 
 instance ToRust Definition [RsItem] where
   toRust def
     | defNoCompilation def || not (usableModality $ getModality def) = return []
   toRust def = do
-    let f = defName def
     rustDefinition <-
       case theDef def of
         Axiom {}
@@ -237,11 +242,11 @@ instance ToRust Definition [RsItem] where
         GeneralizableVar {} -> return []
         Function {} -> do
           strat <- getEvaluationStrategy
-          maybeCompiled <- liftTCM $ toTreeless strat f
+          maybeCompiled <- liftTCM $ toTreeless strat (defName def)
           case maybeCompiled of
             Just tl -> do
               body <- toRust tl
-              return (compileFunction def tl body)
+              compileFunction def tl body
             Nothing -> return []
         Primitive {} -> return []
         PrimitiveSort {} -> return []
@@ -297,9 +302,8 @@ instance ToRust TTerm RsExpr where
 instance ToRust (TTerm, [TTerm]) RsExpr where
   toRust (TCoerce w, args) = toRust (w, args)
   toRust (TApp w args1, args2) = toRust (w, args1 ++ args2)
-  toRust (w, args)
-    -- args <- traverse toRust args
-   = do
+  toRust (w, args) = do
+    args <- traverse toRust args
     case w of
       TVar i -> do
         name <- getVarName i
@@ -307,15 +311,15 @@ instance ToRust (TTerm, [TTerm]) RsExpr where
       TPrim p -> error ("Not implemented " ++ show w)
       TDef d -> do
         name <- makeRustName d
-        return (RsVarRef name)
+        return (RsFunctionCall name [])
       TLam v ->
         withFreshVar $ \x -> do
           body <- toRust v
           return (RsClosure [RsIdent x] body)
       TLit l -> error ("Not implemented " ++ show w)
       TCon c -> do
-        name <- toRust c
-        return (RsFunctionCall name [])
+        name <- makeRustName c
+        return (RsFunctionCall name args)
       TLet u v -> error ("Not implemented " ++ show w)
       TCase i info v bs -> do
         cases <- traverse toRust bs
@@ -331,14 +335,22 @@ instance ToRust (TTerm, [TTerm]) RsExpr where
       TError err -> error ("Not implemented " ++ show w)
 
 instance ToRust TAlt RsArm where
-  toRust (TACon c nargs v) = do
-    c' <- toRust c
-    result <- toRust v
-    return
-      (RsArm (RsDataConstructor (RsIdent (getDataTypeName c)) c' []) result)
+  toRust (TACon c nargs v) =
+    withFreshVars nargs $ \xs -> do
+      c' <- makeRustName c
+      body <- toRust v
+      let wrappedBody =
+            if nargs == 0
+              then body
+              else RsDeref body
+      return
+        (trace
+           (show nargs)
+           (RsArm
+              (RsDataConstructor
+                 (RsIdent (getDataTypeName c))
+                 c'
+                 (map (RsVarRef . RsIdent) xs))
+              wrappedBody))
   toRust TAGuard {} = __IMPOSSIBLE__
   toRust TALit {} = __IMPOSSIBLE__
-
-instance ToRust QName RsIdent where
-  toRust n = do
-    makeRustName n

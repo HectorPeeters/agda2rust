@@ -56,6 +56,7 @@ data RsExpr
   | RsDataConstructor RsIdent RsIdent [RsExpr]
   | RsFunctionCall RsIdent [RsExpr]
   | RsBox RsExpr
+  | RsDeref RsExpr
 
 instance Show RsExpr where
   show (RsReturn Nothing) = "return"
@@ -76,6 +77,7 @@ instance Show RsExpr where
   show (RsFunctionCall name args) =
     show name ++ "()" ++ intercalate "" (map (\x -> "(" ++ show x ++ ")") args)
   show (RsBox expr) = "Box::new(" ++ show expr ++ ")"
+  show (RsDeref expr) = "*" ++ show expr
 
 data RsStatement
   = RsSemi RsExpr
