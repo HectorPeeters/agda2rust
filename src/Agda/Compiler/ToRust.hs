@@ -64,7 +64,7 @@ data ToRustState =
 data ToRustEnv =
   ToRustEnv
     { toRustOptions :: RustOptions
-    , toRustVars    :: [RsIdent]
+    , toRustVars    :: [(RsIdent, Bool)]
     }
 
 type ToRustM a = StateT ToRustState (ReaderT ToRustEnv TCM) a
@@ -72,11 +72,12 @@ type ToRustM a = StateT ToRustState (ReaderT ToRustEnv TCM) a
 initToRustEnv :: RustOptions -> ToRustEnv
 initToRustEnv opts = ToRustEnv opts []
 
-addBinding :: RsIdent -> ToRustEnv -> ToRustEnv
-addBinding x env = env {toRustVars = x : toRustVars env}
+addBinding :: RsIdent -> Bool -> ToRustEnv -> ToRustEnv
+addBinding x shouldDeref env =
+  env {toRustVars = (x, shouldDeref) : toRustVars env}
 
-getVarName :: Int -> ToRustM RsIdent
-getVarName i = reader $ (!! i) . toRustVars
+getVar :: Int -> ToRustM (RsIdent, Bool)
+getVar i = reader $ (!! i) . toRustVars
 
 reservedNames :: Set RsIdent
 reservedNames =
@@ -168,23 +169,22 @@ getDataTypeName :: QName -> Text
 getDataTypeName name =
   T.pack $ prettyShow (nameConcrete (last (mnameToList (qnameModule name))))
 
-getVar :: Int -> ToRustM RsIdent
-getVar i = reader $ (!! i) . toRustVars
-
-withFreshVar :: (Text -> ToRustM a) -> ToRustM a
-withFreshVar f = do
+withFreshVar :: Bool -> (Text -> ToRustM a) -> ToRustM a
+withFreshVar shouldDeref f = do
   strat <- getEvaluationStrategy
-  withFreshVar' strat f
+  withFreshVar' strat shouldDeref f
 
-withFreshVars :: Int -> ([Text] -> ToRustM a) -> ToRustM a
-withFreshVars i f
+withFreshVars :: Int -> Bool -> ([Text] -> ToRustM a) -> ToRustM a
+withFreshVars i shouldDeref f
   | i <= 0 = f []
-  | otherwise = withFreshVar $ \x -> withFreshVars (i - 1) (f . (x :))
+  | otherwise =
+    withFreshVar shouldDeref $ \x ->
+      withFreshVars (i - 1) shouldDeref (f . (x :))
 
-withFreshVar' :: EvaluationStrategy -> (Text -> ToRustM a) -> ToRustM a
-withFreshVar' strat f = do
+withFreshVar' :: EvaluationStrategy -> Bool -> (Text -> ToRustM a) -> ToRustM a
+withFreshVar' strat shouldDeref f = do
   x <- freshRustIdentifier
-  local (addBinding $ RsIdent x) $ f x
+  local (addBinding (RsIdent x) shouldDeref) $ f x
 
 freshRustIdentifier :: ToRustM Text
 freshRustIdentifier = do
@@ -299,6 +299,10 @@ instance ToRust TTerm RsExpr where
   toRust v = do
     toRust $ tAppView v
 
+derefIfRequired :: RsExpr -> Bool -> RsExpr
+derefIfRequired expr False = expr
+derefIfRequired expr True  = RsDeref expr
+
 instance ToRust (TTerm, [TTerm]) RsExpr where
   toRust (TCoerce w, args) = toRust (w, args)
   toRust (TApp w args1, args2) = toRust (w, args1 ++ args2)
@@ -306,14 +310,14 @@ instance ToRust (TTerm, [TTerm]) RsExpr where
     args <- traverse toRust args
     case w of
       TVar i -> do
-        name <- getVarName i
-        return (RsVarRef name)
+        (name, shouldDeref) <- getVar i
+        return $ derefIfRequired (RsVarRef name) shouldDeref
       TPrim p -> error ("Not implemented " ++ show w)
       TDef d -> do
         name <- makeRustName d
-        return (RsFunctionCall name [])
+        return (RsFunctionCall name args)
       TLam v ->
-        withFreshVar $ \x -> do
+        withFreshVar False $ \x -> do
           body <- toRust v
           return (RsClosure [RsIdent x] body)
       TLit l -> error ("Not implemented " ++ show w)
@@ -323,12 +327,13 @@ instance ToRust (TTerm, [TTerm]) RsExpr where
       TLet u v -> error ("Not implemented " ++ show w)
       TCase i info v bs -> do
         cases <- traverse toRust bs
-        var <- getVar i
+        (var, shouldDeref) <- getVar i
+        let matchClause = derefIfRequired (RsVarRef var) shouldDeref
         fallback <-
           if isUnreachable v
             then return Nothing
             else Just <$> toRust v
-        return (RsMatch (RsVarRef var) cases fallback)
+        return (RsMatch matchClause cases fallback)
       TUnit -> error ("Not implemented " ++ show w)
       TSort -> error ("Not implemented " ++ show w)
       TErased -> error ("Not implemented " ++ show w)
@@ -336,21 +341,15 @@ instance ToRust (TTerm, [TTerm]) RsExpr where
 
 instance ToRust TAlt RsArm where
   toRust (TACon c nargs v) =
-    withFreshVars nargs $ \xs -> do
+    withFreshVars nargs True $ \xs -> do
       c' <- makeRustName c
       body <- toRust v
-      let wrappedBody =
-            if nargs == 0
-              then body
-              else RsDeref body
       return
-        (trace
-           (show nargs)
-           (RsArm
-              (RsDataConstructor
-                 (RsIdent (getDataTypeName c))
-                 c'
-                 (map (RsVarRef . RsIdent) xs))
-              wrappedBody))
+        (RsArm
+           (RsDataConstructor
+              (RsIdent (getDataTypeName c))
+              c'
+              (map (RsVarRef . RsIdent) xs))
+           body)
   toRust TAGuard {} = __IMPOSSIBLE__
   toRust TALit {} = __IMPOSSIBLE__
