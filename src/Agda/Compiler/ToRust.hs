@@ -207,23 +207,29 @@ removeLastItem []     = []
 removeLastItem [x]    = []
 removeLastItem (x:xs) = x : removeLastItem xs
 
-extractTypes :: Term -> [RsType]
+extractTypes :: Term -> ToRustM [RsType]
 extractTypes x =
   case x of
-    Sort _ -> [RsNone]
-    Var n _ -> [RsEnumType $ RsIdent $ T.pack [['A' ..] !! n]]
-    Def name _ -> [RsEnumType $ RsIdent $ T.pack $ prettyShow $ qnameName name]
+    Sort _ -> return [RsNone]
+    Var n _ -> do
+      return [RsEnumType (RsIdent $ T.pack [['A' ..] !! n]) []]
+    Def name _ -> do
+      constInfo <- liftTCM $ getConstInfo name
+      -- info <- extractTypes $ unEl $ defType constInfo
+      liftIO $ putStrLn (prettyShow name ++ ": " ++ prettyShow constInfo)
+      return [RsEnumType (RsIdent $ T.pack $ prettyShow $ qnameName name) []]
     Pi dom abs -> do
-      let first = extractTypes $ unEl $ unDom dom
-      let rest = extractTypes $ unEl $ unAbs abs
-      first ++ rest
-    _ -> trace ("NOT IMPLEMENTED " ++ show x ++ "\t\t" ++ prettyShow x) []
+      first <- extractTypes $ unEl $ unDom dom
+      rest <- extractTypes $ unEl $ unAbs abs
+      return (first ++ rest)
+    _ ->
+      return $ trace ("NOT IMPLEMENTED " ++ show x ++ "\t\t" ++ prettyShow x) []
 
 compileFunction :: Definition -> TTerm -> RsExpr -> ToRustM [RsItem]
 compileFunction func tl body = do
   let def = theDef func
   name <- makeRustName $ defName func
-  let args = extractTypes $ unEl $ defType func
+  args <- extractTypes $ unEl $ defType func
   let arguments = removeLastItem args
   let ret = Just $ last args
   return [RsFunction (name) arguments ret (RsBlock [RsNoSemi body])]
@@ -249,13 +255,12 @@ instance ToRust Definition [RsItem] where
             Nothing -> return []
         Primitive {} -> return []
         PrimitiveSort {} -> return []
-        Datatype {dataCons = cons, dataMutual = mut} -> do 
+        Datatype {dataCons = cons, dataMutual = mut} -> do
           let name = RsIdent (getDataTypeName (head cons))
           variantNames <- mapM makeRustName cons
           signatures <- mapM (\c -> liftTCM $ getConstInfo c) cons
-          liftIO $ putStrLn $ show (map (\s -> extractTypes $ unEl $ defType s) signatures)
-          let fullSignatures =
-                map (\s -> extractTypes $ unEl $ defType s) signatures
+          fullSignatures <-
+            mapM (\s -> extractTypes $ unEl $ defType s) signatures
           let constructorFnTypes =
                 map (\x -> (head x, take (length x - 1) x)) fullSignatures
           constructorNames <- mapM makeRustName cons
@@ -287,9 +292,10 @@ instance ToRust Definition [RsItem] where
                 map
                   (\(x, (h, ts)) -> RsVariant x (map (\x -> RsBoxed x) ts))
                   (zip variantNames constructorFnTypes)
-
-          let allGenericTypes = filter (\x -> (length $ show x) == 1) (unique $ concat $ map snd constructorFnTypes)
-
+          let allGenericTypes =
+                filter
+                  (\x -> (length $ show x) == 1)
+                  (unique $ concat $ map snd constructorFnTypes)
           return ((RsEnum name allGenericTypes variants) : rustFunctions)
         Record {} -> return []
         Constructor {conSrcCon = chead, conArity = nargs} -> do

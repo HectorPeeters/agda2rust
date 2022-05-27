@@ -23,15 +23,17 @@ instance Show RsVariant where
     show ident ++ "(" ++ intercalate ", " (map show types) ++ ")"
 
 data RsType
-  = RsEnumType RsIdent
+  = RsEnumType RsIdent [RsType]
   | RsBoxed RsType
   | RsNone
   deriving (Eq)
 
 instance Show RsType where
-  show (RsEnumType ident) = show ident
-  show (RsBoxed t)        = "Box<" ++ show t ++ ">"
-  show RsNone             = "()"
+  show (RsEnumType ident []) = show ident
+  show (RsEnumType ident generics) =
+    show ident ++ "<" ++ intercalate ", " (map show generics) ++ ">"
+  show (RsBoxed t) = "Box<" ++ show t ++ ">"
+  show RsNone = "()"
 
 data RsField =
   RsField RsIdent RsExpr
@@ -103,13 +105,16 @@ unique :: Eq a => [a] -> [a]
 unique []     = []
 unique (x:xs) = x : unique (filter (x /=) xs)
 
+formatGenericArgs :: [RsType] -> String
+formatGenericArgs [] = ""
+formatGenericArgs xs = "<" ++ intercalate ", " (map show xs) ++ ">"
+
 instance Show RsItem where
-  show (RsEnum ident generics variants) = do
-    let genericArgs = "<" ++ intercalate ", " (map show generics) ++ ">"
+  show (RsEnum ident generics variants) =
     "#[derive(Debug)]\nenum " ++
-      show ident ++
-      genericArgs ++
-      " {\n\t" ++ intercalate ",\n\t" (map show variants) ++ "\n}"
+    show ident ++
+    formatGenericArgs generics ++
+    " {\n\t" ++ intercalate ",\n\t" (map show variants) ++ "\n}"
   show (RsFunction ident [] (Just ret) body) = do
     "fn " ++ show ident ++ "() -> " ++ show ret ++ show body
   show (RsFunction ident as (Just ret) body)
@@ -120,11 +125,7 @@ instance Show RsItem where
     -- lets create a list of all the generic arguments in the current function
     -- this is done by filtering all the unique arguments and checking if their length is 1
     let genericArgs =
-          "<" ++
-          intercalate
-            ", "
-            (map show (filter (\x -> length (show x) == 1) (unique args))) ++
-          ">"
+          formatGenericArgs $ filter (\x -> length (show x) == 1) (unique args)
     -- lets create the last curry type which returns the final value of the function
     let firstCurryType =
           "type " ++
