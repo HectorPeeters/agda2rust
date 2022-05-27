@@ -230,87 +230,89 @@ compileFunction func tl body = do
   args <- extractTypes $ unEl $ defType func
   let arguments = removeLastItem args
   let ret = Just $ last args
-  return [RsFunction (name) arguments ret (RsBlock [RsNoSemi body])]
+  return [RsFunction name arguments ret (RsBlock [RsNoSemi body])]
 
 instance ToRust Definition [RsItem] where
   toRust def
     | defNoCompilation def || not (usableModality $ getModality def) = return []
   toRust def = do
-    rustDefinition <-
-      case theDef def of
-        Axiom {}
+    case theDef def of
+      Axiom {}
         --        f' <- newRustDef f
-         -> do
-          return []
-        GeneralizableVar {} -> return []
-        Function {} -> do
-          strat <- getEvaluationStrategy
-          maybeCompiled <- liftTCM $ toTreeless strat (defName def)
-          case maybeCompiled of
-            Just tl -> do
-              body <- toRust tl
-              compileFunction def tl body
-            Nothing -> return []
-        Primitive {} -> return []
-        PrimitiveSort {} -> return []
-        Datatype {dataCons = cons, dataMutual = mut} -> do
-          let enumName = RsIdent (getDataTypeName (head cons))
-          variantNames <- mapM makeRustName cons
-          signatures <- mapM (\c -> liftTCM $ getConstInfo c) cons
-          fullSignatures <-
-            mapM (\s -> extractTypes $ unEl $ defType s) signatures
-          let constructorFnTypes =
-                map (\x -> (last x, removeLastItem x)) fullSignatures
-          constructorNames <- mapM makeRustName cons
-          -- NOTE: don't look at the following few lines of code. At least it works
-          let rustFunctions =
-                map
-                  (\(n, (h, ts)) ->
-                     RsFunction
-                       n
-                       ts
-                       (Just h)
-                       (RsBlock
-                          [ RsNoSemi
-                              (foldr
-                                 (\(x, i) acc ->
-                                    RsClosure [RsIdent $ T.pack (i : "")] acc)
-                                 (RsDataConstructor
-                                    enumName
-                                    n
-                                    (map
-                                       (\x ->
-                                          RsBox $
-                                          RsVarRef $ RsIdent $ T.pack (x : ""))
-                                       (take (length ts) ['a' .. 'z'])))
-                                 (zip ts ['a' .. 'z']))
-                          ]))
-                  (zip constructorNames constructorFnTypes)
-          let allGenericTypes =
-                filter
-                  (\x -> (length $ show x) == 1)
-                  (unique $ concat $ map snd constructorFnTypes)
-          let variants =
-                map
-                  (\(n, (h, ts)) ->
-                     RsVariant
-                       n
-                       (map
-                          (\x ->
-                             case x of
-                               RsEnumType n _
-                                 | n == enumName ->
-                                   RsBoxed $ RsEnumType enumName allGenericTypes
-                               _ -> RsBoxed x)
-                          ts))
-                  (zip variantNames constructorFnTypes)
-          return ((RsEnum enumName allGenericTypes variants) : rustFunctions)
-        Record {} -> return []
-        Constructor {conSrcCon = chead, conArity = nargs} -> do
-          return []
-        AbstractDefn {} -> __IMPOSSIBLE__
-        DataOrRecSig {} -> __IMPOSSIBLE__
-    return rustDefinition
+       -> do
+        return []
+      GeneralizableVar {} -> return []
+      Function {} -> do
+        strat <- getEvaluationStrategy
+        maybeCompiled <- liftTCM $ toTreeless strat (defName def)
+        case maybeCompiled of
+          Just tl -> do
+            body <- toRust tl
+            compileFunction def tl body
+          Nothing -> return []
+      Primitive {} -> return []
+      PrimitiveSort {} -> return []
+      Datatype {dataCons = cons, dataMutual = mut} -> do
+        let enumName = RsIdent (getDataTypeName (head cons))
+        variantNames <- mapM makeRustName cons
+        signatures <- mapM (liftTCM . getConstInfo) cons
+        fullSignatures <- mapM (extractTypes . unEl . defType) signatures
+        let constructorFnTypes =
+              map (\x -> (last x, removeLastItem x)) fullSignatures
+        constructorNames <- mapM makeRustName cons
+        -- NOTE: don't look at the following few lines of code. At least it works
+        let rustFunctions =
+              zipWith
+                (curry
+                   (\(n, (h, ts)) ->
+                      RsFunction
+                        n
+                        ts
+                        (Just h)
+                        (RsBlock
+                           [ RsNoSemi
+                               (foldr
+                                  (\(x, i) acc ->
+                                     RsClosure [RsIdent $ T.pack (i : "")] acc)
+                                  (RsDataConstructor
+                                     enumName
+                                     n
+                                     (map
+                                        (\x ->
+                                           RsBox $
+                                           RsVarRef $ RsIdent $ T.pack (x : ""))
+                                        (take (length ts) ['a' .. 'z'])))
+                                  (zip ts ['a' .. 'z']))
+                           ])))
+                constructorNames
+                constructorFnTypes
+        let allGenericTypes =
+              filter
+                (\x -> length (show x) == 1)
+                (unique $ concatMap snd constructorFnTypes)
+        let variants =
+              zipWith
+                (curry
+                   (\(n, (h, ts)) ->
+                      RsVariant
+                        n
+                        (map
+                           (\x ->
+                              case x of
+                                RsEnumType n _
+                                  | n == enumName ->
+                                    RsBoxed $
+                                    RsEnumType enumName allGenericTypes
+                                _ -> RsBoxed x)
+                           ts)))
+                variantNames
+                constructorFnTypes
+        return (RsEnum enumName allGenericTypes variants : rustFunctions)
+      Record {} -> return []
+      Constructor {conSrcCon = chead, conArity = nargs} -> do
+        return []
+      AbstractDefn {} -> __IMPOSSIBLE__
+      DataOrRecSig {} -> __IMPOSSIBLE__
 
 instance ToRust TTerm RsExpr where
   toRust v = do

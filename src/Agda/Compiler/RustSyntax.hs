@@ -121,19 +121,19 @@ instance Show RsItem where
     -- we are generiting the curry type definitions in reverse order
    = do
     let args = reverse as
-    -- TODO: we can't just assume that all single letter types are generics
-    -- lets create a list of all the generic arguments in the current function
-    -- this is done by filtering all the unique arguments and checking if their length is 1
+      -- TODO: we can't just assume that all single letter types are generics
+      -- lets create a list of all the generic arguments in the current function
+      -- this is done by filtering all the unique arguments and checking if their length is 1
     let genericArgs =
           formatGenericArgs $ filter (\x -> length (show x) == 1) (unique args)
-    -- lets create the last curry type which returns the final value of the function
+      -- lets create the last curry type which returns the final value of the function
     let firstCurryType =
           "type " ++
           show ident ++
           "0" ++
           genericArgs ++
           " = impl FnOnce(" ++ show (head args) ++ ") -> " ++ show ret ++ ";\n"
-    -- lets create all the intermediate curry types
+      -- lets create all the intermediate curry types
     let restCurryLines =
           zipWith
             (\i a ->
@@ -146,7 +146,7 @@ instance Show RsItem where
                ") -> " ++ show ident ++ show (i - 1) ++ genericArgs ++ ";")
             [1 ..]
             (tail args)
-    -- combine all the curry types into a string
+      -- combine all the curry types into a string
     let curryTypes = firstCurryType ++ intercalate "\n" restCurryLines
     curryTypes ++
       "\n\nfn " ++
