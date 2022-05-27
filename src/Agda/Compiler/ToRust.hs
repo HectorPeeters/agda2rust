@@ -215,8 +215,6 @@ extractTypes x =
       return [RsEnumType (RsIdent $ T.pack [['A' ..] !! n]) []]
     Def name _ -> do
       constInfo <- liftTCM $ getConstInfo name
-      -- info <- extractTypes $ unEl $ defType constInfo
-      -- liftIO $ putStrLn (prettyShow name ++ ": " ++ prettyShow constInfo)
       return [RsEnumType (RsIdent $ T.pack $ prettyShow $ qnameName name) []]
     Pi dom abs -> do
       first <- extractTypes $ unEl $ unDom dom
@@ -262,7 +260,7 @@ instance ToRust Definition [RsItem] where
           fullSignatures <-
             mapM (\s -> extractTypes $ unEl $ defType s) signatures
           let constructorFnTypes =
-                map (\x -> (head x, take (length x - 1) x)) fullSignatures
+                map (\x -> (last x, removeLastItem x)) fullSignatures
           constructorNames <- mapM makeRustName cons
           -- NOTE: don't look at the following few lines of code. At least it works
           let rustFunctions =
