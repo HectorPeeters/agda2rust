@@ -359,8 +359,10 @@ instance ToRust (TTerm, [TTerm]) RsExpr where
       TError err -> error ("Not implemented " ++ show w)
 
 instance ToRust TAlt RsArm where
-  toRust (TACon c nargs v) =
-    withFreshVars nargs True $ \xs -> do
+  toRust (TACon c nargs v) = do
+    constInfo <- liftTCM $ getConstInfo c
+    types <- extractTypes $ unEl $ defType constInfo
+    withFreshVars (length types - 1) True $ \xs -> do
       c' <- makeRustName c
       body <- toRust v
       return
