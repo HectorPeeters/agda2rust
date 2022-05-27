@@ -64,7 +64,9 @@ instance Show RsExpr where
   show (RsClosure args expr) =
     "move |" ++ intercalate ", " (map show args) ++ "| {" ++ show expr ++ "}"
   show (RsMatch expr arms Nothing) =
-    "match " ++ show expr ++ " {\n" ++ intercalate "\n" (map show arms) ++ "\n}"
+    "match " ++
+    show expr ++
+    " {\n" ++ intercalate "\n" (map show arms) ++ "\n_ => unreachable!(),\n}"
   show (RsMatch expr arms (Just fallback)) =
     "match " ++
     show expr ++
@@ -94,7 +96,7 @@ instance Show RsBlock where
   show (RsBlock stmts) = "{\n\t" ++ intercalate "\n\t" (map show stmts) ++ "\n}"
 
 data RsItem
-  = RsEnum RsIdent [RsVariant]
+  = RsEnum RsIdent [RsType] [RsVariant]
   | RsFunction RsIdent [RsType] (Maybe RsType) RsBlock
 
 unique :: Eq a => [a] -> [a]
@@ -102,11 +104,14 @@ unique []     = []
 unique (x:xs) = x : unique (filter (x /=) xs)
 
 instance Show RsItem where
-  show (RsEnum ident variants) =
+  show (RsEnum ident generics variants) = do
+    let genericArgs = "<" ++ intercalate ", " (map show generics) ++ ">"
     "#[derive(Debug)]\nenum " ++
-    show ident ++ " {\n\t" ++ intercalate ",\n\t" (map show variants) ++ "\n}"
-  show (RsFunction ident [] (Just ret) body) =
-    do "fn " ++ show ident ++ "() -> " ++ show ret ++ show body
+      show ident ++
+      genericArgs ++
+      " {\n\t" ++ intercalate ",\n\t" (map show variants) ++ "\n}"
+  show (RsFunction ident [] (Just ret) body) = do
+    "fn " ++ show ident ++ "() -> " ++ show ret ++ show body
   show (RsFunction ident as (Just ret) body)
     -- we are generiting the curry type definitions in reverse order
    = do

@@ -222,8 +222,7 @@ extractTypes x =
 compileFunction :: Definition -> TTerm -> RsExpr -> ToRustM [RsItem]
 compileFunction func tl body = do
   let def = theDef func
-  -- makeRustName $ defName
-  name <- makeRustName (defName func)
+  name <- makeRustName $ defName func
   let args = extractTypes $ unEl $ defType func
   let arguments = removeLastItem args
   let ret = Just $ last args
@@ -250,10 +249,11 @@ instance ToRust Definition [RsItem] where
             Nothing -> return []
         Primitive {} -> return []
         PrimitiveSort {} -> return []
-        Datatype {dataCons = cons, dataMutual = mut} -> do
+        Datatype {dataCons = cons, dataMutual = mut} -> do 
           let name = RsIdent (getDataTypeName (head cons))
           variantNames <- mapM makeRustName cons
           signatures <- mapM (\c -> liftTCM $ getConstInfo c) cons
+          liftIO $ putStrLn $ show (map (\s -> extractTypes $ unEl $ defType s) signatures)
           let fullSignatures =
                 map (\s -> extractTypes $ unEl $ defType s) signatures
           let constructorFnTypes =
@@ -287,7 +287,10 @@ instance ToRust Definition [RsItem] where
                 map
                   (\(x, (h, ts)) -> RsVariant x (map (\x -> RsBoxed x) ts))
                   (zip variantNames constructorFnTypes)
-          return ((RsEnum name variants) : rustFunctions)
+
+          let allGenericTypes = filter (\x -> (length $ show x) == 1) (unique $ concat $ map snd constructorFnTypes)
+
+          return ((RsEnum name allGenericTypes variants) : rustFunctions)
         Record {} -> return []
         Constructor {conSrcCon = chead, conArity = nargs} -> do
           return []
