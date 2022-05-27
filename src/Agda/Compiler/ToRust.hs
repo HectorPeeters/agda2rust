@@ -215,6 +215,7 @@ extractTypes x =
       return [RsEnumType (RsIdent $ T.pack [['A' ..] !! n]) []]
     Def name _ -> do
       constInfo <- liftTCM $ getConstInfo name
+      -- TODO: determine if we need generic arguments here
       return [RsEnumType (RsIdent $ T.pack $ prettyShow $ qnameName name) []]
     Pi dom abs -> do
       first <- extractTypes $ unEl $ unDom dom
@@ -343,7 +344,11 @@ instance ToRust (TTerm, [TTerm]) RsExpr where
       TCon c -> do
         name <- makeRustName c
         return (RsFunctionCall name args)
-      TLet u v -> error ("Not implemented " ++ show w)
+      TLet u v -> do
+        expr <- toRust u
+        withFreshVar False $ \x -> do
+          body <- toRust v
+          return $ RsLet (RsIdent x) expr body
       TCase i info v bs -> do
         cases <- traverse toRust bs
         (var, shouldDeref) <- getVar i
@@ -355,7 +360,7 @@ instance ToRust (TTerm, [TTerm]) RsExpr where
         return (RsMatch matchClause cases fallback)
       TUnit -> error ("Not implemented " ++ show w)
       TSort -> error ("Not implemented " ++ show w)
-      TErased -> error ("Not implemented " ++ show w)
+      TErased -> return RsNoneInstance
       TError err -> error ("Not implemented " ++ show w)
 
 instance ToRust TAlt RsArm where

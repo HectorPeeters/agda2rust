@@ -59,6 +59,8 @@ data RsExpr
   | RsFunctionCall RsIdent [RsExpr]
   | RsBox RsExpr
   | RsDeref RsExpr
+  | RsLet RsIdent RsExpr RsExpr
+  | RsNoneInstance
 
 instance Show RsExpr where
   show (RsReturn Nothing) = "return"
@@ -82,6 +84,8 @@ instance Show RsExpr where
     show name ++ "()" ++ intercalate "" (map (\x -> "(" ++ show x ++ ")") args)
   show (RsBox expr) = "Box::new(" ++ show expr ++ ")"
   show (RsDeref expr) = "*" ++ show expr
+  show (RsLet ident expr body) = "{let " ++ show ident ++ " = " ++ show expr ++ ";\n" ++ show body ++ "}"
+  show RsNoneInstance = "()"
 
 data RsStatement
   = RsSemi RsExpr
