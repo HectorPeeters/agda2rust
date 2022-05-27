@@ -216,7 +216,7 @@ extractTypes x =
     Def name _ -> do
       constInfo <- liftTCM $ getConstInfo name
       -- info <- extractTypes $ unEl $ defType constInfo
-      liftIO $ putStrLn (prettyShow name ++ ": " ++ prettyShow constInfo)
+      -- liftIO $ putStrLn (prettyShow name ++ ": " ++ prettyShow constInfo)
       return [RsEnumType (RsIdent $ T.pack $ prettyShow $ qnameName name) []]
     Pi dom abs -> do
       first <- extractTypes $ unEl $ unDom dom
@@ -256,7 +256,7 @@ instance ToRust Definition [RsItem] where
         Primitive {} -> return []
         PrimitiveSort {} -> return []
         Datatype {dataCons = cons, dataMutual = mut} -> do
-          let name = RsIdent (getDataTypeName (head cons))
+          let enumName = RsIdent (getDataTypeName (head cons))
           variantNames <- mapM makeRustName cons
           signatures <- mapM (\c -> liftTCM $ getConstInfo c) cons
           fullSignatures <-
@@ -278,7 +278,7 @@ instance ToRust Definition [RsItem] where
                                  (\(x, i) acc ->
                                     RsClosure [RsIdent $ T.pack (i : "")] acc)
                                  (RsDataConstructor
-                                    name
+                                    enumName
                                     n
                                     (map
                                        (\x ->
@@ -288,15 +288,25 @@ instance ToRust Definition [RsItem] where
                                  (zip ts ['a' .. 'z']))
                           ]))
                   (zip constructorNames constructorFnTypes)
-          let variants =
-                map
-                  (\(x, (h, ts)) -> RsVariant x (map (\x -> RsBoxed x) ts))
-                  (zip variantNames constructorFnTypes)
           let allGenericTypes =
                 filter
                   (\x -> (length $ show x) == 1)
                   (unique $ concat $ map snd constructorFnTypes)
-          return ((RsEnum name allGenericTypes variants) : rustFunctions)
+          let variants =
+                map
+                  (\(n, (h, ts)) ->
+                     RsVariant
+                       n
+                       (map
+                          (\x ->
+                             case x of
+                               RsEnumType n _
+                                 | n == enumName ->
+                                   RsBoxed $ RsEnumType enumName allGenericTypes
+                               _ -> RsBoxed x)
+                          ts))
+                  (zip variantNames constructorFnTypes)
+          return ((RsEnum enumName allGenericTypes variants) : rustFunctions)
         Record {} -> return []
         Constructor {conSrcCon = chead, conArity = nargs} -> do
           return []
