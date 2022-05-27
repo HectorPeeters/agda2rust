@@ -125,7 +125,12 @@ instance Show RsItem where
       -- lets create a list of all the generic arguments in the current function
       -- this is done by filtering all the unique arguments and checking if their length is 1
     let genericArgs =
-          formatGenericArgs $ filter (\x -> length (show x) == 1) (unique args)
+          formatGenericArgs $
+          unique $
+          (filter (\x -> length (show x) == 1) args ++
+           if length (show ret) == 1
+             then [ret]
+             else [])
       -- lets create the last curry type which returns the final value of the function
     let firstCurryType =
           "type " ++
@@ -149,7 +154,7 @@ instance Show RsItem where
       -- combine all the curry types into a string
     let curryTypes = firstCurryType ++ intercalate "\n" restCurryLines
     curryTypes ++
-      "\n\nfn " ++
+      "\nfn " ++
       show ident ++
       genericArgs ++
       "() -> " ++
