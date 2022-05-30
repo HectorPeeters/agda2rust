@@ -61,6 +61,9 @@ data RsExpr
   | RsDeref RsExpr
   | RsLet RsIdent RsExpr RsExpr
   | RsNoneInstance
+  | RsIntLit Integer
+  | RsBinop String RsExpr RsExpr
+  | RsIfElse RsExpr RsExpr RsExpr
 
 instance Show RsExpr where
   show (RsReturn Nothing) = "return"
@@ -86,6 +89,9 @@ instance Show RsExpr where
   show (RsDeref expr) = "*" ++ show expr
   show (RsLet ident expr body) = "{let " ++ show ident ++ " = " ++ show expr ++ ";\n" ++ show body ++ "}"
   show RsNoneInstance = "()"
+  show (RsIntLit x) = show x
+  show (RsBinop op left right) = show left ++ " " ++ op ++ " " ++ show right
+  show (RsIfElse cond a b) = "if " ++ show cond ++ " {\n" ++ show a ++ "\n} else {\n" ++ show b ++ "\n}"
 
 data RsStatement
   = RsSemi RsExpr

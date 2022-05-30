@@ -5,6 +5,7 @@ import           Agda.Compiler.Common
 import           Agda.Compiler.RustSyntax
 import           Agda.Compiler.ToTreeless                        (toTreeless)
 import           Agda.Compiler.Treeless.EliminateLiteralPatterns
+import           Agda.Compiler.Treeless.GuardsToPrims
 import           Agda.Compiler.Treeless.NormalizeNames           (normalizeNames)
 import           Agda.Syntax.Abstract.Name
 import           Agda.Syntax.Common
@@ -32,7 +33,7 @@ import           Control.Monad.Reader
 import           Control.Monad.State
 import           Data.Char
 import           Data.Data                                       (dataTypeName)
-import           Data.List
+import           Data.List                                       hiding (null)
 import           Data.Map                                        (Map)
 import qualified Data.Map                                        as Map
 import           Data.Set                                        (Set)
@@ -317,6 +318,7 @@ instance ToRust Definition [RsItem] where
 
 instance ToRust TTerm RsExpr where
   toRust v = do
+    v <- liftTCM $ eliminateLiteralPatterns (convertGuards v)
     toRust $ tAppView v
 
 derefIfRequired :: RsExpr -> Bool -> RsExpr
@@ -332,7 +334,7 @@ instance ToRust (TTerm, [TTerm]) RsExpr where
       TVar i -> do
         (name, shouldDeref) <- getVar i
         return $ derefIfRequired (RsVarRef name) shouldDeref
-      TPrim p -> error ("Not implemented " ++ show w)
+      TPrim p -> toRust (p, args)
       TDef d -> do
         name <- makeRustName d
         return (RsFunctionCall name args)
@@ -340,7 +342,9 @@ instance ToRust (TTerm, [TTerm]) RsExpr where
         withFreshVar False $ \x -> do
           body <- toRust v
           return (RsClosure [RsIdent x] body)
-      TLit l -> error ("Not implemented " ++ show w)
+      TLit l -> do
+        unless (null args) __IMPOSSIBLE__
+        toRust l
       TCon c -> do
         name <- makeRustName c
         return (RsFunctionCall name args)
@@ -362,6 +366,28 @@ instance ToRust (TTerm, [TTerm]) RsExpr where
       TSort -> error ("Not implemented " ++ show w)
       TErased -> return RsNoneInstance
       TError err -> error ("Not implemented " ++ show w)
+
+instance ToRust (TPrim, [RsExpr]) RsExpr where
+  toRust (PAdd, args) = do
+    return $ RsBinop "+" (args !! 0) (args !! 1)
+  toRust (PSub, args) = do
+    return $ RsBinop "-" (args !! 0) (args !! 1)
+  toRust (PIf, args) = do
+    return $ RsIfElse (args !! 0) (args !! 1) (args !! 2)
+  toRust (PEqI, args) = do
+    return $ RsBinop "==" (args !! 0) (args !! 1)
+  toRust x = error ("Not implemented " ++ show x)
+
+instance ToRust Literal RsExpr where
+  toRust lit =
+    case lit of
+      LitNat x    -> return $ RsIntLit x
+      LitWord64 x -> error ("Not implemented " ++ show lit)
+      LitFloat x  -> error ("Not implemented " ++ show lit)
+      LitString x -> error ("Not implemented " ++ show lit)
+      LitChar x   -> error ("Not implemented " ++ show lit)
+      LitQName x  -> error ("Not implemented " ++ show lit)
+      LitMeta p x -> error ("Not implemented " ++ show lit)
 
 instance ToRust TAlt RsArm where
   toRust (TACon c nargs v) = do
