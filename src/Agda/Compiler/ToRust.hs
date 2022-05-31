@@ -205,6 +205,10 @@ freshRustIdentifier = do
 getFunctionName :: QName -> Text
 getFunctionName = replace "." "_" . T.pack . prettyShow
 
+getGenericTypes :: Term -> [RsType]
+getGenericTypes (Pi _ abs) = [RsEnumType (RsIdent $ T.pack $ absName abs) []]
+getGenericTypes _ = []
+
 instance ToRust Type RsType where
   toRust term =
     case unEl term of
@@ -212,7 +216,8 @@ instance ToRust Type RsType where
       Var n _ -> return $ RsBruijn n
       Def name _ -> do
         constInfo <- liftTCM $ getConstInfo name
-        return $ RsEnumType (RsIdent $ T.pack $ prettyShow $ qnameName name) []
+        let genericTypes = getGenericTypes $ unEl $ defType constInfo
+        return $ RsEnumType (RsIdent $ T.pack $ prettyShow $ qnameName name) genericTypes
       Pi dom abs -> do
         first <- toRust $ unDom dom
         rest <- toRust $ unAbs abs

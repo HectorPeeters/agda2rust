@@ -4,6 +4,7 @@ import Data.List (intercalate)
 import Data.Sequence (mapWithIndex)
 import Data.Text (Text)
 import qualified Data.Text as T
+import Debug.Trace
 
 -- Based on: https://hackage.haskell.org/package/flp-0.1.0.0/docs/src/Language.Rust.Syntax.AST.html
 rustPrelude =
@@ -38,6 +39,13 @@ data RsType
   | RsBruijn Int
   | RsNone
   deriving (Eq)
+
+getGenericsFromType :: RsType -> [RsType]
+getGenericsFromType x@(RsEnumType name []) = [x | length (show name) == 1]
+getGenericsFromType (RsEnumType _ generics) = generics
+getGenericsFromType (RsBoxed x) = getGenericsFromType x
+getGenericsFromType (RsFn a b) = unique (getGenericsFromType a ++ getGenericsFromType b)
+getGenericsFromType _ = []
 
 instance Show RsType where
   show (RsEnumType ident []) = show ident
@@ -164,14 +172,8 @@ instance Show RsItem where
       -- TODO: we can't just assume that all single letter types are generics
       -- lets create a list of all the generic arguments in the current function
       -- this is done by filtering all the unique arguments and checking if their length is 1
-      let genericArgs =
-            formatGenericArgs $
-              unique
-                ( filter
-                    (\x -> length (show x) == 1)
-                    args
-                    ++ [ret | length (show ret) == 1]
-                )
+      let genericArgs = formatGenericArgs $ unique $ concatMap getGenericsFromType (args ++ [ret])
+
       -- lets create the last curry type which returns the final value of the function
       let firstCurryType =
             "type "
@@ -183,6 +185,7 @@ instance Show RsItem where
               ++ ") -> "
               ++ show ret
               ++ ";\n"
+
       -- lets create all the intermediate curry types
       let restCurryLines =
             zipWith
