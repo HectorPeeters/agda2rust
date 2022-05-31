@@ -1,72 +1,72 @@
 module Agda.Compiler.ToRust where
 
-import           Agda.Compiler.Backend                           (TTerm)
-import           Agda.Compiler.Common
-import           Agda.Compiler.RustSyntax
-import           Agda.Compiler.ToTreeless                        (toTreeless)
-import           Agda.Compiler.Treeless.EliminateLiteralPatterns
-import           Agda.Compiler.Treeless.GuardsToPrims
-import           Agda.Compiler.Treeless.NormalizeNames           (normalizeNames)
-import           Agda.Syntax.Abstract.Name
-import           Agda.Syntax.Common
-import           Agda.Syntax.Concrete                            (Name (nameNameParts))
-import           Agda.Syntax.Internal                            as I
-import           Agda.Syntax.Literal
-import           Agda.Syntax.Treeless
-import           Agda.TypeChecking.Monad
-import           Agda.TypeChecking.Pretty
-import           Agda.TypeChecking.Primitive.Base
-import           Agda.Utils.Impossible                           (__IMPOSSIBLE__)
-import           Agda.Utils.Lens
-import           Agda.Utils.List
-import           Agda.Utils.Maybe
-import           Agda.Utils.Monad                                (ifM, unlessM)
-import           Agda.Utils.Null
-import           Agda.Utils.Pretty
-import qualified Agda.Utils.Pretty                               as P
-import           Agda.Utils.Singleton
-import           Control.DeepSeq                                 (NFData)
-import           Control.Monad
-import           Control.Monad.Except
-import           Control.Monad.IO.Class                          (MonadIO (liftIO))
-import           Control.Monad.Reader
-import           Control.Monad.State
-import           Data.Char
-import           Data.Data                                       (dataTypeName)
-import           Data.List                                       hiding (null)
-import           Data.Map                                        (Map)
-import qualified Data.Map                                        as Map
-import           Data.Set                                        (Set)
-import qualified Data.Set                                        as Set
-import           Data.Text                                       (Text, replace)
-import qualified Data.Text                                       as T
-import           Debug.Trace                                     (trace)
-import           GHC.Generics                                    (Generic)
-import           Prelude                                         hiding (empty,
-                                                                  null)
+import Agda.Compiler.Backend (TTerm)
+import Agda.Compiler.Common
+import Agda.Compiler.RustSyntax
+import Agda.Compiler.ToTreeless (toTreeless)
+import Agda.Compiler.Treeless.EliminateLiteralPatterns
+import Agda.Compiler.Treeless.GuardsToPrims
+import Agda.Compiler.Treeless.NormalizeNames (normalizeNames)
+import Agda.Syntax.Abstract.Name
+import Agda.Syntax.Common
+import Agda.Syntax.Concrete (Name (nameNameParts))
+import Agda.Syntax.Internal as I
+import Agda.Syntax.Literal
+import Agda.Syntax.Parser.Literate (literateMd)
+import Agda.Syntax.Treeless
+import Agda.TypeChecking.Monad
+import Agda.TypeChecking.Pretty
+import Agda.TypeChecking.Primitive.Base
+import Agda.Utils.Impossible (__IMPOSSIBLE__)
+import Agda.Utils.Lens
+import Agda.Utils.List
+import Agda.Utils.Maybe
+import Agda.Utils.Monad (ifM, unlessM)
+import Agda.Utils.Null
+import Agda.Utils.Pretty
+import qualified Agda.Utils.Pretty as P
+import Agda.Utils.Singleton
+import Control.DeepSeq (NFData)
+import Control.Monad
+import Control.Monad.Except
+import Control.Monad.IO.Class (MonadIO (liftIO))
+import Control.Monad.Reader
+import Control.Monad.State
+import Data.Char
+import Data.Data (dataTypeName)
+import Data.List hiding (null)
+import Data.Map (Map)
+import qualified Data.Map as Map
+import Data.Set (Set)
+import qualified Data.Set as Set
+import Data.Text (Text, replace)
+import qualified Data.Text as T
+import Debug.Trace (trace)
+import GHC.Generics (Generic)
+import Prelude hiding
+  ( empty,
+    null,
+  )
 
 deriving instance Generic EvaluationStrategy
 
 deriving instance NFData EvaluationStrategy
 
-newtype RustOptions =
-  RustOptions
-    { rustEvaluation :: EvaluationStrategy
-    }
+newtype RustOptions = RustOptions
+  { rustEvaluation :: EvaluationStrategy
+  }
   deriving (Generic, NFData)
 
-data ToRustState =
-  ToRustState
-    { toRustFresh     :: [Text]
-    , toRustDefs      :: Map QName RsIdent
-    , toRustUsedNames :: Set RsIdent
-    }
+data ToRustState = ToRustState
+  { toRustFresh :: [Text],
+    toRustDefs :: Map QName RsIdent,
+    toRustUsedNames :: Set RsIdent
+  }
 
-data ToRustEnv =
-  ToRustEnv
-    { toRustOptions :: RustOptions
-    , toRustVars    :: [(RsIdent, Bool)]
-    }
+data ToRustEnv = ToRustEnv
+  { toRustOptions :: RustOptions,
+    toRustVars :: [(RsIdent, Bool)]
+  }
 
 type ToRustM a = StateT ToRustState (ReaderT ToRustEnv TCM) a
 
@@ -83,7 +83,7 @@ getVar i = reader $ (!! i) . toRustVars
 reservedNames :: Set RsIdent
 reservedNames =
   Set.fromList $
-  map RsIdent ["if", "fn", "match", "+", "-", "*", "/", "true", "false"]
+    map RsIdent ["if", "fn", "match", "+", "-", "*", "/", "true", "false"]
 
 freshVars :: [Text]
 freshVars = concat [map (<> i) xs | i <- "" : map (T.pack . show) [1 ..]]
@@ -93,9 +93,9 @@ freshVars = concat [map (<> i) xs | i <- "" : map (T.pack . show) [1 ..]]
 initToRustState :: ToRustState
 initToRustState =
   ToRustState
-    { toRustFresh = freshVars
-    , toRustDefs = Map.empty
-    , toRustUsedNames = reservedNames
+    { toRustFresh = freshVars,
+      toRustDefs = Map.empty,
+      toRustUsedNames = reservedNames
     }
 
 runToRustM :: RustOptions -> ToRustM a -> TCM a
@@ -118,25 +118,25 @@ setNameUsed x =
 rustAllowedUnicodeCats :: Set GeneralCategory
 rustAllowedUnicodeCats =
   Set.fromList
-    [ UppercaseLetter
-    , LowercaseLetter
-    , TitlecaseLetter
-    , ModifierLetter
-    , OtherLetter
-    , NonSpacingMark
-    , SpacingCombiningMark
-    , EnclosingMark
-    , DecimalNumber
-    , LetterNumber
-    , OtherNumber
-    , ConnectorPunctuation
-    , DashPunctuation
-    , OtherPunctuation
-    , CurrencySymbol
-    , MathSymbol
-    , ModifierSymbol
-    , OtherSymbol
-    , PrivateUse
+    [ UppercaseLetter,
+      LowercaseLetter,
+      TitlecaseLetter,
+      ModifierLetter,
+      OtherLetter,
+      NonSpacingMark,
+      SpacingCombiningMark,
+      EnclosingMark,
+      DecimalNumber,
+      LetterNumber,
+      OtherNumber,
+      ConnectorPunctuation,
+      DashPunctuation,
+      OtherPunctuation,
+      CurrencySymbol,
+      MathSymbol,
+      ModifierSymbol,
+      OtherSymbol,
+      PrivateUse
     ]
 
 isValidRustChar :: Char -> Bool
@@ -146,8 +146,8 @@ isValidRustChar x
 
 fourBitsToChar :: Int -> Char
 fourBitsToChar i = "0123456789ABCDEF" !! i
-
 {-# INLINE fourBitsToChar #-}
+
 makeRustName :: QName -> ToRustM RsIdent
 makeRustName n = do
   a <- go $ T.pack $ fixName $ prettyShow $ qnameName n
@@ -192,28 +192,27 @@ freshRustIdentifier = do
   names <- gets toRustFresh
   case names of
     [] -> fail "No more variables!"
-    (x:names') -> do
+    (x : names') -> do
       let ident = RsIdent x
       modify $ \st -> st {toRustFresh = names'}
       ifM (isNameUsed ident) freshRustIdentifier $ {-otherwise-}
-       do
-        setNameUsed ident
-        return x
+        do
+          setNameUsed ident
+          return x
 
 getFunctionName :: QName -> Text
 getFunctionName = replace "." "_" . T.pack . prettyShow
 
 removeLastItem :: [a] -> [a]
-removeLastItem []     = []
-removeLastItem [x]    = []
-removeLastItem (x:xs) = x : removeLastItem xs
+removeLastItem [] = []
+removeLastItem [x] = []
+removeLastItem (x : xs) = x : removeLastItem xs
 
 extractTypes :: Term -> ToRustM [RsType]
 extractTypes x =
   case x of
     Sort _ -> return [RsNone]
-    Var n _ -> do
-      return [RsEnumType (RsIdent $ T.pack [['A' ..] !! n]) []]
+    Var n _ -> return [RsEnumType (RsIdent $ T.pack [['A' ..] !! n]) []]
     Def name _ -> do
       constInfo <- liftTCM $ getConstInfo name
       -- TODO: determine if we need generic arguments here
@@ -230,6 +229,7 @@ compileFunction func tl body = do
   let def = theDef func
   name <- makeRustName $ defName func
   args <- extractTypes $ unEl $ defType func
+  -- telView Typechecking.Telescope theTel: arguments, theCore: return type
   let arguments = removeLastItem args
   let ret = Just $ last args
   return [RsFunction name arguments ret (RsBlock [RsNoSemi body])]
@@ -237,84 +237,94 @@ compileFunction func tl body = do
 instance ToRust Definition [RsItem] where
   toRust def
     | defNoCompilation def || not (usableModality $ getModality def) = return []
-  toRust def = do
-    case theDef def of
-      Axiom {}
-        --        f' <- newRustDef f
-       -> do
-        return []
-      GeneralizableVar {} -> return []
-      Function {} -> do
-        strat <- getEvaluationStrategy
-        maybeCompiled <- liftTCM $ toTreeless strat (defName def)
-        case maybeCompiled of
-          Just tl -> do
-            body <- toRust tl
-            compileFunction def tl body
-          Nothing -> return []
-      Primitive {} -> return []
-      PrimitiveSort {} -> return []
-      Datatype {dataCons = cons, dataMutual = mut} -> do
-        let enumName = RsIdent (getDataTypeName (head cons))
-        variantNames <- mapM makeRustName cons
-        signatures <- mapM (liftTCM . getConstInfo) cons
-        fullSignatures <- mapM (extractTypes . unEl . defType) signatures
-        let constructorFnTypes =
-              map (\x -> (last x, removeLastItem x)) fullSignatures
-        constructorNames <- mapM makeRustName cons
-        -- NOTE: don't look at the following few lines of code. At least it works
-        let rustFunctions =
-              zipWith
-                (curry
-                   (\(n, (h, ts)) ->
+  toRust def = case theDef def of
+    Axiom {} ->
+      --        f' <- newRustDef f
+      return []
+    GeneralizableVar {} -> return []
+    Function {} -> do
+      strat <- getEvaluationStrategy
+      maybeCompiled <- liftTCM $ toTreeless strat (defName def)
+      case maybeCompiled of
+        Just tl -> do
+          body <- toRust tl
+          compileFunction def tl body
+        Nothing -> return []
+    Primitive {} -> return []
+    PrimitiveSort {} -> return []
+    Datatype {dataCons = cons, dataMutual = mut} -> do
+      let enumName = RsIdent (getDataTypeName (head cons))
+      variantNames <- mapM makeRustName cons
+      signatures <- mapM (liftTCM . getConstInfo) cons
+      fullSignatures <- mapM (extractTypes . unEl . defType) signatures
+      let constructorFnTypes =
+            map (\x -> (last x, removeLastItem x)) fullSignatures
+      constructorNames <- mapM makeRustName cons
+      -- NOTE: don't look at the following few lines of code. At least it works
+      let rustFunctions =
+            zipWith
+              ( curry
+                  ( \(n, (h, ts)) ->
                       RsFunction
                         n
                         ts
                         (Just h)
-                        (RsBlock
-                           [ RsNoSemi
-                               (foldr
-                                  (\(x, i) acc ->
-                                     RsClosure [RsIdent $ T.pack (i : "")] acc)
-                                  (RsDataConstructor
-                                     enumName
-                                     n
-                                     (map
-                                        (\x ->
-                                           RsBox $
-                                           RsVarRef $ RsIdent $ T.pack (x : ""))
-                                        (take (length ts) ['a' .. 'z'])))
-                                  (zip ts ['a' .. 'z']))
-                           ])))
-                constructorNames
-                constructorFnTypes
-        let allGenericTypes =
-              filter
-                (\x -> length (show x) == 1)
-                (unique $ concatMap snd constructorFnTypes)
-        let variants =
-              zipWith
-                (curry
-                   (\(n, (h, ts)) ->
+                        ( RsBlock
+                            [ RsNoSemi
+                                ( foldr
+                                    ( \(x, i) acc ->
+                                        RsClosure [RsIdent $ T.pack (i : "")] acc
+                                    )
+                                    ( RsDataConstructor
+                                        enumName
+                                        n
+                                        ( map
+                                            ( \x ->
+                                                RsBox $
+                                                  RsVarRef $ RsIdent $ T.pack (x : "")
+                                            )
+                                            (take (length ts) ['a' .. 'z'])
+                                        )
+                                    )
+                                    (zip ts ['a' .. 'z'])
+                                )
+                            ]
+                        )
+                  )
+              )
+              constructorNames
+              constructorFnTypes
+      let allGenericTypes =
+            filter
+              (\x -> length (show x) == 1)
+              (unique $ concatMap snd constructorFnTypes)
+      let variants =
+            zipWith
+              ( curry
+                  ( \(n, (h, ts)) ->
                       RsVariant
                         n
-                        (map
-                           (\x ->
-                              case x of
-                                RsEnumType n _
-                                  | n == enumName ->
-                                    RsBoxed $
-                                    RsEnumType enumName allGenericTypes
-                                _ -> RsBoxed x)
-                           ts)))
-                variantNames
-                constructorFnTypes
-        return (RsEnum enumName allGenericTypes variants : rustFunctions)
-      Record {} -> return []
-      Constructor {conSrcCon = chead, conArity = nargs} -> do
-        return []
-      AbstractDefn {} -> __IMPOSSIBLE__
-      DataOrRecSig {} -> __IMPOSSIBLE__
+                        ( map
+                            ( \x ->
+                                case x of
+                                  RsEnumType n _
+                                    | n == enumName ->
+                                      RsBoxed $
+                                        RsEnumType enumName allGenericTypes
+                                  _ -> RsBoxed x
+                            )
+                            ts
+                        )
+                  )
+              )
+              variantNames
+              constructorFnTypes
+      return (RsEnum enumName allGenericTypes variants : rustFunctions)
+    Record {} -> return []
+    Constructor {conSrcCon = chead, conArity = nargs} -> do
+      return []
+    AbstractDefn {} -> __IMPOSSIBLE__
+    DataOrRecSig {} -> __IMPOSSIBLE__
 
 instance ToRust TTerm RsExpr where
   toRust v = do
@@ -323,7 +333,7 @@ instance ToRust TTerm RsExpr where
 
 derefIfRequired :: RsExpr -> Bool -> RsExpr
 derefIfRequired expr False = expr
-derefIfRequired expr True  = RsDeref expr
+derefIfRequired expr True = RsDeref expr
 
 instance ToRust (TTerm, [TTerm]) RsExpr where
   toRust (TCoerce w, args) = toRust (w, args)
@@ -368,25 +378,21 @@ instance ToRust (TTerm, [TTerm]) RsExpr where
       TError err -> error ("Not implemented " ++ show w)
 
 instance ToRust (TPrim, [RsExpr]) RsExpr where
-  toRust (PAdd, args) = do
-    return $ RsBinop "+" (args !! 0) (args !! 1)
-  toRust (PSub, args) = do
-    return $ RsBinop "-" (args !! 0) (args !! 1)
-  toRust (PIf, args) = do
-    return $ RsIfElse (args !! 0) (args !! 1) (args !! 2)
-  toRust (PEqI, args) = do
-    return $ RsBinop "==" (args !! 0) (args !! 1)
+  toRust (PAdd, args) = return $ RsBinop "+" (head args) (args !! 1)
+  toRust (PSub, args) = return $ RsBinop "-" (head args) (args !! 1)
+  toRust (PIf, args) = return $ RsIfElse (head args) (args !! 1) (args !! 2)
+  toRust (PEqI, args) = return $ RsBinop "==" (head args) (args !! 1)
   toRust x = error ("Not implemented " ++ show x)
 
 instance ToRust Literal RsExpr where
   toRust lit =
     case lit of
-      LitNat x    -> return $ RsIntLit x
+      LitNat x -> return $ RsIntLit x
       LitWord64 x -> error ("Not implemented " ++ show lit)
-      LitFloat x  -> error ("Not implemented " ++ show lit)
+      LitFloat x -> error ("Not implemented " ++ show lit)
       LitString x -> error ("Not implemented " ++ show lit)
-      LitChar x   -> error ("Not implemented " ++ show lit)
-      LitQName x  -> error ("Not implemented " ++ show lit)
+      LitChar x -> error ("Not implemented " ++ show lit)
+      LitQName x -> error ("Not implemented " ++ show lit)
       LitMeta p x -> error ("Not implemented " ++ show lit)
 
 instance ToRust TAlt RsArm where
@@ -397,11 +403,16 @@ instance ToRust TAlt RsArm where
       c' <- makeRustName c
       body <- toRust v
       return
-        (RsArm
-           (RsDataConstructor
-              (RsIdent (getDataTypeName c))
-              c'
-              (map (RsVarRef . RsIdent) xs))
-           body)
+        ( RsArm
+            ( RsDataConstructor
+                (RsIdent (getDataTypeName c))
+                c'
+                (map (RsVarRef . RsIdent) xs)
+            )
+            body
+        )
   toRust TAGuard {} = __IMPOSSIBLE__
-  toRust TALit {} = __IMPOSSIBLE__
+  toRust (TALit lit body) = do
+    lit <- toRust lit
+    body <- toRust body
+    return $ RsArm lit body
