@@ -6,7 +6,16 @@ import Data.Text (Text)
 import qualified Data.Text as T
 
 -- Based on: https://hackage.haskell.org/package/flp-0.1.0.0/docs/src/Language.Rust.Syntax.AST.html
-rustPrelude = "#![feature(type_alias_impl_trait)]\n#![allow(non_camel_case_types)]\n\n"
+rustPrelude =
+  unlines
+    [ "#![feature(type_alias_impl_trait)]",
+      "#![allow(unconditional_recursion)]",
+      "#![allow(non_camel_case_types)]",
+      "#![allow(unreachable_patterns)]",
+      "#![allow(unused_variables)]",
+      "#![allow(dead_code)]"
+    ]
+    ++ "\n"
 
 newtype RsIdent
   = RsIdent Text
