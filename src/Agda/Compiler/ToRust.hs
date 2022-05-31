@@ -17,7 +17,6 @@ import Agda.Syntax.Treeless
 import Agda.TypeChecking.Monad
 import Agda.TypeChecking.Pretty
 import Agda.TypeChecking.Primitive.Base
-import Agda.TypeChecking.Primitive.Base (domH)
 import Agda.TypeChecking.Substitute (TelV (theCore, theTel))
 import Agda.TypeChecking.Telescope (telView)
 import Agda.Utils.Impossible (__IMPOSSIBLE__)
@@ -206,16 +205,11 @@ freshRustIdentifier = do
 getFunctionName :: QName -> Text
 getFunctionName = replace "." "_" . T.pack . prettyShow
 
-removeLastItem :: [a] -> [a]
-removeLastItem [] = []
-removeLastItem [x] = []
-removeLastItem (x : xs) = x : removeLastItem xs
-
 instance ToRust Type RsType where
   toRust term =
     case unEl term of
       Sort _ -> return RsNone
-      Var n _ -> return $ RsEnumType (RsIdent $ T.pack [['A' ..] !! n]) []
+      Var n _ -> return $ RsBruijn n
       Def name _ -> do
         constInfo <- liftTCM $ getConstInfo name
         return $ RsEnumType (RsIdent $ T.pack $ prettyShow $ qnameName name) []
@@ -226,24 +220,37 @@ instance ToRust Type RsType where
       _ ->
         return $ trace ("NOT IMPLEMENTED " ++ show term ++ "\t\t" ++ prettyShow term) RsNone
 
+eliminateDeBruijn :: Int -> [RsType] -> [RsType]
+eliminateDeBruijn offset xs =
+  zipWith
+    ( \x i ->
+        ( case x of
+            (RsBruijn j) -> RsEnumType (RsIdent $ T.pack [['A' ..] !! (offset + i - j - 1)]) []
+            (RsFn a b) -> RsFn (head $ eliminateDeBruijn i [a]) (head $ eliminateDeBruijn i [b])
+            _ -> x
+        )
+    )
+    xs
+    [0 ..]
+
 unpackTele :: I.Tele (I.Dom Type) -> [Type]
 unpackTele EmptyTel = []
 unpackTele (ExtendTel x xs) = unDom x : unpackTele (unAbs xs)
 
-getSignatureFromDef :: Definition -> ToRustM ([RsType], RsType)
+getSignatureFromDef :: Definition -> ToRustM [RsType]
 getSignatureFromDef def = do
   let t = defType def
   telView <- telView t
   arguments <- mapM toRust (unpackTele $ theTel telView)
   ret <- toRust $ theCore telView
-  return (arguments, ret)
+  return $ eliminateDeBruijn 0 (arguments ++ [ret])
 
 compileFunction :: Definition -> TTerm -> RsExpr -> ToRustM [RsItem]
 compileFunction func tl body = do
   let def = theDef func
   name <- makeRustName $ defName func
-  (args, ret) <- getSignatureFromDef func
-  return [RsFunction name args (Just ret) (RsBlock [RsNoSemi body])]
+  args <- getSignatureFromDef func
+  return [RsFunction name args (RsBlock [RsNoSemi body])]
 
 instance ToRust Definition [RsItem] where
   toRust def
@@ -272,59 +279,47 @@ instance ToRust Definition [RsItem] where
       -- NOTE: don't look at the following few lines of code. At least it works
       let rustFunctions =
             zipWith
-              ( curry
-                  ( \(n, (as, r)) ->
-                      RsFunction
-                        n
-                        as
-                        (Just r)
-                        ( RsBlock
-                            [ RsNoSemi
-                                ( foldr
-                                    ( \(x, i) acc ->
-                                        RsClosure [RsIdent $ T.pack (i : "")] acc
+              ( \n as ->
+                  RsFunction
+                    n
+                    as
+                    ( RsBlock
+                        [ RsNoSemi
+                            ( foldr
+                                (\(x, i) acc -> RsClosure [RsIdent $ T.pack (i : "")] acc)
+                                ( RsDataConstructor
+                                    enumName
+                                    n
+                                    ( map
+                                        (\x -> RsBox $ RsVarRef $ RsIdent $ T.pack (x : ""))
+                                        (take (length as - 1) ['a' .. 'z'])
                                     )
-                                    ( RsDataConstructor
-                                        enumName
-                                        n
-                                        ( map
-                                            ( \x ->
-                                                RsBox $
-                                                  RsVarRef $ RsIdent $ T.pack (x : "")
-                                            )
-                                            (take (length as) ['a' .. 'z'])
-                                        )
-                                    )
-                                    (zip as ['a' .. 'z'])
                                 )
-                            ]
-                        )
-                  )
+                                (zip (removeLast as) ['a' .. 'z'])
+                            )
+                        ]
+                    )
               )
               constructorNames
               constructorFnTypes
       let allGenericTypes =
             filter
               (\x -> length (show x) == 1)
-              (unique $ concatMap fst constructorFnTypes)
+              (unique $ concat constructorFnTypes)
       let variants =
             zipWith
-              ( curry
-                  ( \(n, (as, r)) ->
-                      RsVariant
-                        n
-                        ( map
-                            ( \x ->
-                                case x of
-                                  RsEnumType n _
-                                    | n == enumName ->
-                                      RsBoxed $
-                                        RsEnumType enumName allGenericTypes
-                                  _ -> RsBoxed x
-                            )
-                            as
+              ( \n as ->
+                  RsVariant
+                    n
+                    ( map
+                        ( \x ->
+                            case x of
+                              RsEnumType n _
+                                | n == enumName -> RsBoxed $ RsEnumType enumName allGenericTypes
+                              _ -> RsBoxed x
                         )
-                  )
+                        (removeLast as)
+                    )
               )
               variantNames
               constructorFnTypes
@@ -407,8 +402,7 @@ instance ToRust Literal RsExpr where
 instance ToRust TAlt RsArm where
   toRust (TACon c nargs v) = do
     constInfo <- liftTCM $ getConstInfo c
-    (args, ret) <- getSignatureFromDef constInfo
-    let types = args ++ [ret]
+    types <- getSignatureFromDef constInfo
     withFreshVars (length types - 1) True $ \xs -> do
       c' <- makeRustName c
       body <- toRust v

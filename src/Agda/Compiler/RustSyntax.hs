@@ -6,7 +6,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 
 -- Based on: https://hackage.haskell.org/package/flp-0.1.0.0/docs/src/Language.Rust.Syntax.AST.html
-rustPrelude = "#![feature(type_alias_impl_trait)]\n\n"
+rustPrelude = "#![feature(type_alias_impl_trait)]\n#![allow(non_camel_case_types)]\n\n"
 
 newtype RsIdent
   = RsIdent Text
@@ -26,6 +26,7 @@ data RsType
   = RsEnumType RsIdent [RsType]
   | RsBoxed RsType
   | RsFn RsType RsType
+  | RsBruijn Int
   | RsNone
   deriving (Eq)
 
@@ -35,6 +36,7 @@ instance Show RsType where
     show ident ++ "<" ++ intercalate ", " (map show generics) ++ ">"
   show (RsBoxed t) = "Box<" ++ show t ++ ">"
   show (RsFn a r) = "impl FnOnce(" ++ show a ++ ") -> " ++ show r
+  show (RsBruijn n) = '@' : show n
   show RsNone = "()"
 
 data RsField
@@ -120,7 +122,7 @@ instance Show RsBlock where
 
 data RsItem
   = RsEnum RsIdent [RsType] [RsVariant]
-  | RsFunction RsIdent [RsType] (Maybe RsType) RsBlock
+  | RsFunction RsIdent [RsType] RsBlock
 
 unique :: Eq a => [a] -> [a]
 unique [] = []
@@ -130,6 +132,11 @@ formatGenericArgs :: [RsType] -> String
 formatGenericArgs [] = ""
 formatGenericArgs xs = "<" ++ intercalate ", " (map show xs) ++ ">"
 
+removeLast :: [a] -> [a]
+removeLast [] = []
+removeLast [x] = []
+removeLast (x : xs) = x : removeLast xs
+
 instance Show RsItem where
   show (RsEnum ident generics variants) =
     "#[derive(Debug)]\nenum "
@@ -138,12 +145,13 @@ instance Show RsItem where
       ++ " {\n\t"
       ++ intercalate ",\n\t" (map show variants)
       ++ "\n}"
-  show (RsFunction ident [] (Just ret) body) = do
+  show (RsFunction ident [ret] body) = do
     "fn " ++ show ident ++ "() -> " ++ show ret ++ show body
-  show (RsFunction ident as (Just ret) body) =
+  show (RsFunction ident as body) =
     -- we are generiting the curry type definitions in reverse order
     do
-      let args = reverse as
+      let ret = last as
+      let args = reverse $ removeLast as
       -- TODO: we can't just assume that all single letter types are generics
       -- lets create a list of all the generic arguments in the current function
       -- this is done by filtering all the unique arguments and checking if their length is 1
