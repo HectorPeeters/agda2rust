@@ -27,18 +27,18 @@ backend = Backend backend'
 backend' :: Backend' RustOptions RustOptions () () [HirStmt]
 backend' =
   Backend'
-    { backendName = "agda2rust"
-    , options = RustOptions EagerEvaluation
-    , commandLineFlags = rustFlags
-    , isEnabled = const True
-    , preCompile = rustPreCompile
-    , postCompile = \_ _ _ -> return ()
-    , preModule = \_ _ _ _ -> return $ Recompile ()
-    , compileDef = rustCompileDef
-    , postModule = rustPostModule
-    , backendVersion = Nothing
-    , scopeCheckingSuffices = False
-    , mayEraseType = \_ -> return True
+    { backendName = "agda2rust",
+      options = RustOptions EagerEvaluation,
+      commandLineFlags = rustFlags,
+      isEnabled = const True,
+      preCompile = rustPreCompile,
+      postCompile = \_ _ _ -> return (),
+      preModule = \_ _ _ _ -> return $ Recompile (),
+      compileDef = rustCompileDef,
+      postModule = rustPostModule,
+      backendVersion = Nothing,
+      scopeCheckingSuffices = False,
+      mayEraseType = \_ -> return True
     }
 
 rustFlags :: [OptDescr (Flag RustOptions)]
@@ -49,17 +49,16 @@ rustPreCompile = return
 
 rustCompileDef :: RustOptions -> () -> IsMain -> Definition -> TCM [HirStmt]
 rustCompileDef opts _ isMain def = do
-  hir <- runToRustM opts $ toRust def
-  return hir
+  runToRustM opts $ toRust def
 
 rustPostModule ::
-     RustOptions -> () -> IsMain -> ModuleName -> [[HirStmt]] -> TCM ()
+  RustOptions -> () -> IsMain -> ModuleName -> [[HirStmt]] -> TCM ()
 rustPostModule opts _ isMain modName defList = do
   let defs :: [HirStmt] = concat defList
   let hirText = intercalate "\n\n" (map show defs)
   let hirFileName = prettyShow (last $ mnameToList modName) ++ ".hir"
   liftIO $ T.writeFile hirFileName (T.pack hirText)
-  let lir = toLirStmts defs
+  let lir = concatMap toLirStmts defs
   let lirText = intercalate "\n\n" (map show lir)
   let lirFileName = prettyShow (last $ mnameToList modName) ++ ".rs"
   liftIO $ T.writeFile lirFileName (T.pack lirText)

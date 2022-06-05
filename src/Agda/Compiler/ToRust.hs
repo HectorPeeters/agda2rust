@@ -86,7 +86,7 @@ getVar i = reader $ (!! i) . toRustVars
 
 reservedNames :: Set HirIdent
 reservedNames =
-  Set.fromList $ ["if", "fn", "match", "+", "-", "*", "/", "true", "false"]
+  Set.fromList ["if", "fn", "match", "+", "-", "*", "/", "true", "false"]
 
 freshVars :: [Text]
 freshVars = concat [map (<> i) xs | i <- "" : map (T.pack . show) [1 ..]]
@@ -152,9 +152,7 @@ fourBitsToChar i = "0123456789ABCDEF" !! i
 
 {-# INLINE fourBitsToChar #-}
 makeRustName :: QName -> ToRustM HirIdent
-makeRustName n = do
-  a <- go $ T.pack $ fixName $ prettyShow $ qnameName n
-  return a
+makeRustName n = go $ T.pack $ fixName $ prettyShow $ qnameName n
   where
     nextName x = T.pack ('z' : T.unpack x) -- TODO: do something smarter
     go s = ifM (isNameUsed s) (go $ nextName s) (return s)
@@ -205,8 +203,8 @@ freshRustIdentifier = do
 getFunctionName :: QName -> Text
 getFunctionName = replace "." "_" . T.pack . prettyShow
 
-getGenericTypes :: Term -> [HirGeneric]
-getGenericTypes (Pi _ abs) = [T.pack $ absName abs]
+getGenericTypes :: Term -> [HirType]
+getGenericTypes (Pi _ abs) = [HirGeneric $ T.pack $ absName abs]
 getGenericTypes _          = []
 
 instance ToRust Type HirType where
@@ -215,13 +213,12 @@ instance ToRust Type HirType where
       Sort _ -> return HirNone
       Var n _ -> return $ HirBruijn n
       Def name _
-        | (length $ prettyShow $ qnameName name) /= 1 -> do
+        | length (prettyShow $ qnameName name) /= 1 -> do
           constInfo <- liftTCM $ getConstInfo name
           let genericTypes = getGenericTypes $ unEl $ defType constInfo
           return $
             HirEnumType (T.pack $ prettyShow $ qnameName name) genericTypes
-      Def name _ -> do
-        return $ HirGeneric $ T.pack $ prettyShow $ qnameName name
+      Def name _ -> return $ HirGeneric $ T.pack $ prettyShow $ qnameName name
       Pi dom abs -> do
         first <- toRust $ unDom dom
         rest <- toRust $ unAbs abs
@@ -276,7 +273,7 @@ instance ToRust Definition [HirStmt] where
   toRust def =
     case theDef def of
       Axiom {}
-      --        f' <- newRustDef f
+        --        f' <- newRustDef f
        -> return []
       GeneralizableVar {} -> return []
       Function {} -> do
@@ -295,11 +292,10 @@ instance ToRust Definition [HirStmt] where
         signatures <- mapM (liftTCM . getConstInfo) cons
         constructorFnTypes <- mapM getSignatureFromDef signatures
         constructorNames <- mapM makeRustName cons
-        return $
+        return
           [HirConstructor enumName (zip constructorNames constructorFnTypes)]
       Record {} -> return []
-      Constructor {conSrcCon = chead, conArity = nargs} -> do
-        return []
+      Constructor {conSrcCon = chead, conArity = nargs} -> return []
       AbstractDefn {} -> __IMPOSSIBLE__
       DataOrRecSig {} -> __IMPOSSIBLE__
 
@@ -355,11 +351,11 @@ instance ToRust (TTerm, [TTerm]) HirExpr where
       TError err -> error ("Not implemented " ++ show w)
 
 instance ToRust (TPrim, [HirExpr]) HirExpr where
-  toRust (PAdd, args) = error ("Not implemented") -- return $ HirBinop "+" (head args) (args !! 1)
-  toRust (PSub, args) = error ("Not implemented") -- return $ HirBinop "-" (head args) (args !! 1)
-  toRust (PIf, args)  = error ("Not implemented") -- return $ HirIfElse (head args) (args !! 1) (args !! 2)
-  toRust (PEqI, args) = error ("Not implemented") -- return $ HirBinop "==" (head args) (args !! 1)
-  toRust x            = error ("Not implemented ")
+  toRust (PAdd, args) = error "Not implemented" -- return $ HirBinop "+" (head args) (args !! 1)
+  toRust (PSub, args) = error "Not implemented" -- return $ HirBinop "-" (head args) (args !! 1)
+  toRust (PIf, args)  = error "Not implemented" -- return $ HirIfElse (head args) (args !! 1) (args !! 2)
+  toRust (PEqI, args) = error "Not implemented" -- return $ HirBinop "==" (head args) (args !! 1)
+  toRust x            = error "Not implemented "
 
 instance ToRust Literal HirExpr where
   toRust lit =
@@ -380,9 +376,9 @@ instance ToRust TAlt HirArm where
       c' <- makeRustName c
       body <- toRust v
       return
-        ((HirDataConstructor (getDataTypeName c) c' (map HirVarRef xs)), body)
+        (HirDataConstructor (getDataTypeName c) c' (map HirVarRef xs), body)
   toRust TAGuard {} = __IMPOSSIBLE__
   toRust (TALit lit body) = do
     lit <- toRust lit
     body <- toRust body
-    return $ (lit, body)
+    return (lit, body)
