@@ -105,23 +105,23 @@ instance ToLir HirStmt [LirStmt] where
     let enumConstructor =
           LirEnum name generics (map (second (map LirBoxed)) lirVariants)
     let constructorBodies =
-          zipWith
-            (\(n, ts) argName ->
+          map
+            (\(n, ts) ->
                foldr
-                 (\x acc -> LirClosure (T.pack [argName]) acc)
+                 (\(x, argName) acc -> LirClosure (T.pack [argName]) acc)
                  (LirDataConstructor
                     name
                     n
                     (map
                        (\c -> LirBox $ LirVarRef $ T.pack [c])
-                       (take (length ts) ['b' ..])))
-                 ts)
+                       (take (length ts) ['a' ..])))
+                 (zip ts ['a' ..]))
             lirVariants
-            ['a' ..]
     let constructorFunctions =
           concat $
           zipWith
-            (\(n, ts) body -> toLir (n, ts ++ [LirNamedType name []], body))
+            (\(n, ts) body ->
+               toLir (n, ts ++ [LirNamedType name generics], body))
             lirVariants
             constructorBodies
     enumConstructor : constructorFunctions
