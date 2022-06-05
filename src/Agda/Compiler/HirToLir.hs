@@ -98,13 +98,12 @@ instance ToLir HirStmt [LirStmt] where
     toLir (name, lirArgTypes, lirBody)
   toLir (HirConstructor name variants) = do
     let lirVariants =
-          map
-            (\(n, args) -> (n, map (LirBoxed . toLir) (removeLast args)))
-            variants
+          map (\(n, args) -> (n, map toLir (removeLast args))) variants
     let generics =
           unique $
           concatMap (\(_, x) -> concatMap extractGenericsFromType x) lirVariants
-    let enumConstructor = LirEnum name generics lirVariants
+    let enumConstructor =
+          LirEnum name generics (map (second (map LirBoxed)) lirVariants)
     let constructorBodies =
           zipWith
             (\(n, ts) argName ->
@@ -114,7 +113,7 @@ instance ToLir HirStmt [LirStmt] where
                     name
                     n
                     (map
-                       (\c -> LirVarRef $ T.pack [c])
+                       (\c -> LirBox $ LirVarRef $ T.pack [c])
                        (take (length ts) ['b' ..])))
                  ts)
             lirVariants

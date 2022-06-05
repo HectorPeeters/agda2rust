@@ -22,6 +22,7 @@ data LirExpr
   | LirMatch LirExpr [LirArm] (Maybe LirExpr)
     -- expr
   | LirDeref LirExpr
+  | LirBox LirExpr
   | LirNoneInstance
 
 instance Show LirExpr where
@@ -49,6 +50,7 @@ instance Show LirExpr where
     "{\n" ++
     intercalate "\n" (map show arms) ++ "\n_ => " ++ show fallback ++ "\n}"
   show (LirDeref expr) = "*" ++ show expr
+  show (LirBox expr) = "Box::new(" ++ show expr ++ ")"
   show LirNoneInstance = "None"
 
 formatGenerics :: [LirType] -> String
