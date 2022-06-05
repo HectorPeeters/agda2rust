@@ -217,7 +217,7 @@ instance ToRust Type HirType where
           constInfo <- liftTCM $ getConstInfo name
           let genericTypes = getGenericTypes $ unEl $ defType constInfo
           return $
-            HirEnumType (T.pack $ prettyShow $ qnameName name) genericTypes
+            HirNamedType (T.pack $ prettyShow $ qnameName name) genericTypes
       Def name _ -> return $ HirGeneric $ T.pack $ prettyShow $ qnameName name
       Pi dom abs -> do
         first <- toRust $ unDom dom
@@ -235,7 +235,7 @@ eliminateDeBruijn offset xs =
     (\x i ->
        (case x of
           (HirBruijn j) ->
-            HirEnumType (T.pack [['A' ..] !! (offset + i - j - 1)]) []
+            HirNamedType (T.pack [['A' ..] !! (offset + i - j - 1)]) []
           (HirFn a b) ->
             HirFn
               (head $ eliminateDeBruijn i [a])

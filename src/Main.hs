@@ -3,8 +3,8 @@ module Main where
 import           Agda.Compiler.Backend
 import           Agda.Compiler.Common
 import           Agda.Compiler.Hir        (HirStmt)
-import           Agda.Compiler.HirToLir   (toLirStmts)
-import           Agda.Compiler.RustSyntax (RsItem, rustPrelude)
+import           Agda.Compiler.HirToLir   (ToLir (toLir))
+import           Agda.Compiler.Lir        (LirStmt)
 import           Agda.Compiler.ToRust     (RustOptions (RustOptions),
                                            ToRust (toRust), runToRustM)
 import           Agda.Interaction.Options (OptDescr)
@@ -51,6 +51,17 @@ rustCompileDef :: RustOptions -> () -> IsMain -> Definition -> TCM [HirStmt]
 rustCompileDef opts _ isMain def = do
   runToRustM opts $ toRust def
 
+rustPrelude =
+  unlines
+    [ "#![feature(type_alias_impl_trait)]",
+      "#![allow(unconditional_recursion)]",
+      "#![allow(non_camel_case_types)]",
+      "#![allow(unreachable_patterns)]",
+      "#![allow(unused_variables)]",
+      "#![allow(dead_code)]"
+    ]
+    ++ "\n"
+
 rustPostModule ::
   RustOptions -> () -> IsMain -> ModuleName -> [[HirStmt]] -> TCM ()
 rustPostModule opts _ isMain modName defList = do
@@ -58,7 +69,7 @@ rustPostModule opts _ isMain modName defList = do
   let hirText = intercalate "\n\n" (map show defs)
   let hirFileName = prettyShow (last $ mnameToList modName) ++ ".hir"
   liftIO $ T.writeFile hirFileName (T.pack hirText)
-  let lir = concatMap toLirStmts defs
-  let lirText = intercalate "\n\n" (map show lir)
+  let lir :: [LirStmt] = toLir defs
+  let lirText = rustPrelude ++ intercalate "\n\n" (map show lir) ++ "\nfn main() {}"
   let lirFileName = prettyShow (last $ mnameToList modName) ++ ".rs"
   liftIO $ T.writeFile lirFileName (T.pack lirText)

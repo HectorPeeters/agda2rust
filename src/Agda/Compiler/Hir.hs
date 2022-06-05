@@ -45,15 +45,15 @@ instance Show HirExpr where
   show HirNoneInstance = "()"
 
 data HirType
-  = HirEnumType HirIdent [HirType]
+  = HirNamedType HirIdent [HirType]
   | HirGeneric HirIdent
   | HirBruijn Int
   | HirFn HirType HirType
   | HirNone
 
 instance Show HirType where
-  show (HirEnumType name []) = T.unpack name
-  show (HirEnumType name generics) =
+  show (HirNamedType name []) = T.unpack name
+  show (HirNamedType name generics) =
     T.unpack name ++ "<" ++ intercalate ", " (map show generics) ++ ">"
   show (HirGeneric name) = T.unpack name
   show (HirBruijn x) = "@" ++ show x
