@@ -26,7 +26,6 @@ executable agda2rust
 
     -- Modules included in this executable, other than Main.
     other-modules:    Agda.Compiler.ToRust,
-                      Agda.Compiler.RustSyntax,
                       Agda.Compiler.Hir,
                       Agda.Compiler.Lir,
                       Agda.Compiler.HirToLir
