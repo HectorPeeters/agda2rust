@@ -18,7 +18,10 @@ instance ToLir HirExpr LirExpr where
   toLir (HirClosure arg body) = LirClosure arg (toLir body)
   toLir (HirLet name expr body) = LirLet name (toLir expr) (toLir body)
   toLir (HirMatch expr arms fallback) =
-    LirMatch (toLir expr) (map (bimap toLir toLir) arms) (fmap toLir fallback)
+    LirMatch
+      (toLir expr)
+      (map (bimap toLir toLir) arms ++ [(LirWildcard, LirUnreachable)])
+      (fmap toLir fallback)
   toLir (HirDeref expr) = LirDeref (toLir expr)
   toLir HirNoneInstance = LirNoneInstance
 

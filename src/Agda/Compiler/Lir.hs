@@ -24,6 +24,8 @@ data LirExpr
   | LirDeref LirExpr
   | LirBox LirExpr
   | LirNoneInstance
+  | LirWildcard
+  | LirUnreachable
 
 instance Show LirExpr where
   show (LirVarRef name) = T.unpack name
@@ -52,6 +54,8 @@ instance Show LirExpr where
   show (LirDeref expr) = "*" ++ show expr
   show (LirBox expr) = "Box::new(" ++ show expr ++ ")"
   show LirNoneInstance = "None"
+  show LirWildcard = "_"
+  show LirUnreachable = "unreachable!()"
 
 formatGenerics :: [LirType] -> String
 formatGenerics [] = ""
