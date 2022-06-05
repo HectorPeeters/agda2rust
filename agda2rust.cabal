@@ -28,7 +28,8 @@ executable agda2rust
     other-modules:    Agda.Compiler.ToRust,
                       Agda.Compiler.RustSyntax,
                       Agda.Compiler.Hir,
-                      Agda.Compiler.Lir
+                      Agda.Compiler.Lir,
+                      Agda.Compiler.HirToLir
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:

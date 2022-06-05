@@ -3,6 +3,7 @@ module Main where
 import           Agda.Compiler.Backend
 import           Agda.Compiler.Common
 import           Agda.Compiler.Hir        (HirStmt)
+import           Agda.Compiler.HirToLir   (toLirStmts)
 import           Agda.Compiler.RustSyntax (RsItem, rustPrelude)
 import           Agda.Compiler.ToRust     (RustOptions (RustOptions),
                                            ToRust (toRust), runToRustM)
@@ -53,7 +54,12 @@ rustCompileDef opts _ isMain def = do
 
 rustPostModule ::
      RustOptions -> () -> IsMain -> ModuleName -> [[HirStmt]] -> TCM ()
-rustPostModule opts _ isMain modName defs = do
-  let modText = intercalate "\n\n" (map show (concat defs))
-  let fileName = prettyShow (last $ mnameToList modName) ++ ".hir"
-  liftIO $ T.writeFile fileName (T.pack modText)
+rustPostModule opts _ isMain modName defList = do
+  let defs :: [HirStmt] = concat defList
+  let hirText = intercalate "\n\n" (map show defs)
+  let hirFileName = prettyShow (last $ mnameToList modName) ++ ".hir"
+  liftIO $ T.writeFile hirFileName (T.pack hirText)
+  let lir = toLirStmts defs
+  let lirText = intercalate "\n\n" (map show lir)
+  let lirFileName = prettyShow (last $ mnameToList modName) ++ ".rs"
+  liftIO $ T.writeFile lirFileName (T.pack lirText)
