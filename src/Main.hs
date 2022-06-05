@@ -27,18 +27,18 @@ backend = Backend backend'
 backend' :: Backend' RustOptions RustOptions () () [HirStmt]
 backend' =
   Backend'
-    { backendName = "agda2rust",
-      options = RustOptions EagerEvaluation,
-      commandLineFlags = rustFlags,
-      isEnabled = const True,
-      preCompile = rustPreCompile,
-      postCompile = \_ _ _ -> return (),
-      preModule = \_ _ _ _ -> return $ Recompile (),
-      compileDef = rustCompileDef,
-      postModule = rustPostModule,
-      backendVersion = Nothing,
-      scopeCheckingSuffices = False,
-      mayEraseType = \_ -> return True
+    { backendName = "agda2rust"
+    , options = RustOptions EagerEvaluation
+    , commandLineFlags = rustFlags
+    , isEnabled = const True
+    , preCompile = rustPreCompile
+    , postCompile = \_ _ _ -> return ()
+    , preModule = \_ _ _ _ -> return $ Recompile ()
+    , compileDef = rustCompileDef
+    , postModule = rustPostModule
+    , backendVersion = Nothing
+    , scopeCheckingSuffices = False
+    , mayEraseType = \_ -> return True
     }
 
 rustFlags :: [OptDescr (Flag RustOptions)]
@@ -53,23 +53,24 @@ rustCompileDef opts _ isMain def = do
 
 rustPrelude =
   unlines
-    [ "#![feature(type_alias_impl_trait)]",
-      "#![allow(unconditional_recursion)]",
-      "#![allow(non_camel_case_types)]",
-      "#![allow(unreachable_patterns)]",
-      "#![allow(unused_variables)]",
-      "#![allow(dead_code)]"
-    ]
-    ++ "\n"
+    [ "#![feature(type_alias_impl_trait)]"
+    , "#![allow(unconditional_recursion)]"
+    , "#![allow(non_camel_case_types)]"
+    , "#![allow(unreachable_patterns)]"
+    , "#![allow(unused_variables)]"
+    , "#![allow(dead_code)]"
+    ] ++
+  "\n"
 
 rustPostModule ::
-  RustOptions -> () -> IsMain -> ModuleName -> [[HirStmt]] -> TCM ()
+     RustOptions -> () -> IsMain -> ModuleName -> [[HirStmt]] -> TCM ()
 rustPostModule opts _ isMain modName defList = do
   let defs :: [HirStmt] = concat defList
   let hirText = intercalate "\n\n" (map show defs)
   let hirFileName = prettyShow (last $ mnameToList modName) ++ ".hir"
   liftIO $ T.writeFile hirFileName (T.pack hirText)
   let lir :: [LirStmt] = toLir defs
-  let lirText = rustPrelude ++ intercalate "\n\n" (map show lir) ++ "\nfn main() {}"
+  let lirText =
+        rustPrelude ++ intercalate "\n\n" (map show lir) ++ "\nfn main() {}"
   let lirFileName = prettyShow (last $ mnameToList modName) ++ ".rs"
   liftIO $ T.writeFile lirFileName (T.pack lirText)
