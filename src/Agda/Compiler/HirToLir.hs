@@ -15,6 +15,7 @@ instance ToLir HirExpr LirExpr where
   toLir (HirDataConstructor datatype constructor args) =
     LirDataConstructor datatype constructor (map toLir args)
   toLir (HirFnCall name args) = LirFnCall name (map toLir args)
+  toLir (HirClosureCall name args) = LirClosureCall name (map toLir args)
   toLir (HirClosure arg body) = LirClosure arg (toLir body)
   toLir (HirLet name expr body) = LirLet name (toLir expr) (toLir body)
   toLir (HirMatch expr arms fallback) =

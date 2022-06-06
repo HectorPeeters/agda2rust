@@ -14,6 +14,8 @@ data LirExpr
   | LirDataConstructor LirIdent LirIdent [LirExpr]
     -- name arguments
   | LirFnCall LirIdent [LirExpr]
+    -- name arguments
+  | LirClosureCall LirIdent [LirExpr]
     -- arg_name body
   | LirClosure LirIdent LirExpr
     -- name expr body
@@ -37,6 +39,10 @@ instance Show LirExpr where
   show (LirFnCall name args) =
     T.unpack name ++
     "()" ++ intercalate "" (map (\x -> "(" ++ show x ++ ")") args)
+  show (LirClosureCall name args) =
+    "(" ++
+    T.unpack name ++
+    ")" ++ intercalate "" (map (\x -> "(" ++ show x ++ ")") args)
   show (LirClosure name body) = "move |" ++ T.unpack name ++ "| " ++ show body
   show (LirLet name expr body) =
     "{let " ++
@@ -54,7 +60,7 @@ instance Show LirExpr where
     intercalate "\n" (map show arms) ++ "\n_ => " ++ show fallback ++ "\n}"
   show (LirDeref expr) = "*" ++ show expr
   show (LirBox expr) = "Box::new(" ++ show expr ++ ")"
-  show LirNoneInstance = "None"
+  show LirNoneInstance = "()"
   show LirWildcard = "_"
   show LirUnreachable = "unreachable!()"
 
@@ -71,7 +77,6 @@ data LirType
   deriving (Eq)
 
 instance Show LirType where
-  show (LirNamedType name []) = T.unpack name
   show (LirNamedType name generics) = T.unpack name ++ formatGenerics generics
   show (LirGeneric name) = T.unpack name
   show (LirFn arg_type return_type) =

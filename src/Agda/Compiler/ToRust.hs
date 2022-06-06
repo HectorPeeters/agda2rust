@@ -282,7 +282,7 @@ instance ToRust Definition [HirStmt] where
         case maybeCompiled of
           Just tl -> do
             body <- toRust tl
-            compileFunction def tl body
+            trace (prettyShow tl) (compileFunction def tl body)
           Nothing -> return []
       Primitive {} -> return []
       PrimitiveSort {} -> return []
@@ -316,7 +316,9 @@ instance ToRust (TTerm, [TTerm]) HirExpr where
     case w of
       TVar i -> do
         (name, shouldDeref) <- getVar i
-        return $ derefIfRequired (HirVarRef name) shouldDeref
+        case args of
+          []   -> return $ derefIfRequired (HirVarRef name) shouldDeref
+          args -> return $ HirClosureCall name args
       TPrim p -> toRust (p, args)
       TDef d -> do
         name <- makeRustName d

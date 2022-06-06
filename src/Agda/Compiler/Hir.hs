@@ -14,6 +14,8 @@ data HirExpr
   | HirDataConstructor HirIdent HirIdent [HirExpr]
     -- name arguments
   | HirFnCall HirIdent [HirExpr]
+    -- name arguments
+  | HirClosureCall HirIdent [HirExpr]
     -- arg_name body
   | HirClosure HirIdent HirExpr
     -- name expr body
@@ -32,6 +34,8 @@ instance Show HirExpr where
     T.unpack constructor ++ "(" ++ intercalate ", " (map show args) ++ ")"
   show (HirFnCall name args) =
     T.unpack name ++ "(" ++ intercalate ", " (map show args) ++ ")"
+  show (HirClosureCall name args) =
+    "(" ++ T.unpack name ++ ")(" ++ intercalate ", " (map show args) ++ ")"
   show (HirClosure name body) = "|" ++ T.unpack name ++ "| " ++ show body
   show (HirLet name expr body) =
     "let " ++ T.unpack name ++ " = " ++ show expr ++ "\n" ++ show body
