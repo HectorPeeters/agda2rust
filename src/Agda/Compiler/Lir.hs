@@ -26,6 +26,7 @@ data LirExpr
   | LirNoneInstance
   | LirWildcard
   | LirUnreachable
+  deriving (Eq)
 
 instance Show LirExpr where
   show (LirVarRef name) = T.unpack name
@@ -82,6 +83,7 @@ data LirStmt
   = LirFunction LirIdent [LirType] LirType LirExpr
   | LirEnum LirIdent [LirType] [(LirIdent, [LirType])]
   | LirTypeAlias LirIdent LirType [LirType]
+  deriving (Eq)
 
 instance Show LirStmt where
   show (LirFunction name generics ret_type body) =

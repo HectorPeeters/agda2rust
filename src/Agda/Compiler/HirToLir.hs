@@ -56,7 +56,7 @@ extractGenericsFromStmt (LirEnum _ gs variants) =
 extractGenericsFromStmt (LirTypeAlias _ t g) = extractGenericsFromType t ++ g
 
 instance ToLir [HirStmt] [LirStmt] where
-  toLir = concatMap toLir
+  toLir xs = unique $ concatMap toLir xs
 
 removeLast :: [a] -> [a]
 removeLast xs = [xs !! i | i <- [0 .. (length xs - 2)]]
