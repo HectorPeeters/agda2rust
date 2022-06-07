@@ -81,7 +81,9 @@ instance ToLir (LirIdent, [LirType], LirExpr) [LirStmt] where
                let generics =
                      unique
                        (extractGenericsFromType firstType ++
-                        extractGenericsFromType (argTypes !! (n - 1)))
+                        (concat $
+                         (map extractGenericsFromType (take (n + 1) argTypes))))
+                   ownGenerics = extractGenericsFromType t
                 in case t of
                      (LirFnOnce arg ret) ->
                        trace
@@ -90,7 +92,7 @@ instance ToLir (LirIdent, [LirType], LirExpr) [LirStmt] where
                          , LirFnOnce
                              (LirNamedType
                                 (T.append (makeAliasName name (n - 1)) "_")
-                                (unique (generics ++ extractGenericsFromType t)))
+                                (unique (generics ++ ownGenerics)))
                              (LirNamedType (makeAliasName name (n - 2)) generics)
                          ]
                      _ ->
