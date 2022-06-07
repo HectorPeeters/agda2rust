@@ -1,10 +1,11 @@
 module Agda.Compiler.HirToLir where
 
+import           Agda.Auto.NarrowingSearch (extractblkinfos)
 import           Agda.Compiler.Hir
 import           Agda.Compiler.Lir
-import           Agda.Utils.Impossible (__IMPOSSIBLE__)
+import           Agda.Utils.Impossible     (__IMPOSSIBLE__)
 import           Data.Bifunctor
-import qualified Data.Text             as T
+import qualified Data.Text                 as T
 import           Debug.Trace
 
 class ToLir a b where
@@ -30,7 +31,7 @@ instance ToLir HirType LirType where
   toLir (HirNamedType name generics) = LirNamedType name (map toLir generics)
   toLir (HirGeneric name)            = LirGeneric name
   toLir (HirBruijn _)                = __IMPOSSIBLE__
-  toLir (HirFn argType retType)      = LirFn (toLir argType) (toLir retType)
+  toLir (HirFn argType retType)      = LirFnOnce (toLir argType) (toLir retType)
   toLir HirNone                      = LirNone
 
 unique :: Eq a => [a] -> [a]
@@ -41,6 +42,8 @@ extractGenericsFromType :: LirType -> [LirType]
 extractGenericsFromType (LirNamedType name gs) =
   unique gs ++ [LirGeneric name | T.length name == 1]
 extractGenericsFromType x@(LirGeneric _) = [x]
+extractGenericsFromType (LirFnOnce arg ret) =
+  unique (extractGenericsFromType arg ++ extractGenericsFromType ret)
 extractGenericsFromType (LirFn arg ret) =
   unique (extractGenericsFromType arg ++ extractGenericsFromType ret)
 extractGenericsFromType (LirBoxed t) = extractGenericsFromType t
@@ -69,29 +72,60 @@ instance ToLir (LirIdent, [LirType], LirExpr) [LirStmt] where
     [LirFunction name (extractGenericsFromType argType) argType body]
   toLir (name, argTypes, body) = do
     let makeAliasName name n = T.append name (T.pack $ show n)
-    let firstType = LirFn (argTypes !! (length argTypes - 2)) (last argTypes)
-    let types =
-          firstType :
+    let firstType =
+          LirFnOnce (argTypes !! (length argTypes - 2)) (last argTypes)
+    let types :: [[LirType]] =
+          [firstType] :
           zipWith
             (\t n ->
                let generics =
                      unique
                        (extractGenericsFromType firstType ++
                         extractGenericsFromType (argTypes !! (n - 1)))
-                in LirFn t (LirNamedType (makeAliasName name (n - 2)) generics))
+                in case t of
+                     (LirFnOnce arg ret) ->
+                       trace
+                         (show arg ++ " " ++ show ret ++ " " ++ show t)
+                         [ LirFn arg ret
+                         , LirFnOnce
+                             (LirNamedType
+                                (T.append (makeAliasName name (n - 1)) "_")
+                                (unique (generics ++ extractGenericsFromType t)))
+                             (LirNamedType (makeAliasName name (n - 2)) generics)
+                         ]
+                     _ ->
+                       [ LirFnOnce
+                           t
+                           (LirNamedType (makeAliasName name (n - 2)) generics)
+                       ])
             (reverse $ removeLast $ removeLast argTypes)
             [2 ..]
     let typeAliases =
-          zipWith
-            (\t n ->
-               LirTypeAlias (makeAliasName name n) t (extractGenericsFromType t))
-            types
-            [0 ..]
+          concat
+            (zipWith
+               (\t n ->
+                  case t of
+                    [t1] ->
+                      [ LirTypeAlias
+                          (makeAliasName name n)
+                          t1
+                          (extractGenericsFromType t1)
+                      ]
+                    [t1, t2] ->
+                      [ LirTypeAlias
+                          (T.append (makeAliasName name n) "_")
+                          t1
+                          (extractGenericsFromType t1)
+                      , LirTypeAlias
+                          (makeAliasName name n)
+                          t2
+                          (extractGenericsFromType t2)
+                      ])
+               types
+               [0 ..])
     let returnGenerics = unique $ concatMap extractGenericsFromStmt typeAliases
     let returnType =
-          LirNamedType
-            (makeAliasName name (length typeAliases - 1))
-            returnGenerics
+          LirNamedType (makeAliasName name (length types - 1)) returnGenerics
     typeAliases ++
       [LirFunction name (extractGenericsFromType returnType) returnType body]
 

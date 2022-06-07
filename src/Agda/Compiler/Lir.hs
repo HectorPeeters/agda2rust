@@ -71,6 +71,7 @@ formatGenerics xs = "<" ++ intercalate ", " (map show xs) ++ ">"
 data LirType
   = LirNamedType LirIdent [LirType]
   | LirGeneric LirIdent
+  | LirFnOnce LirType LirType
   | LirFn LirType LirType
   | LirBoxed LirType
   | LirNone
@@ -79,8 +80,10 @@ data LirType
 instance Show LirType where
   show (LirNamedType name generics) = T.unpack name ++ formatGenerics generics
   show (LirGeneric name) = T.unpack name
-  show (LirFn arg_type return_type) =
+  show (LirFnOnce arg_type return_type) =
     "impl FnOnce(" ++ show arg_type ++ ") -> " ++ show return_type
+  show (LirFn arg_type return_type) =
+    "impl Fn(" ++ show arg_type ++ ") -> " ++ show return_type
   show (LirBoxed t) = "Box<" ++ show t ++ ">"
   show LirNone = "()"
 
