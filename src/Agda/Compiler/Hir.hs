@@ -10,21 +10,23 @@ type HirArm = (HirExpr, HirExpr)
 
 data HirExpr
   = HirVarRef HirIdent
-    -- datatype_name constructor_name args
+    -- ^ variable reference: identifier
   | HirDataConstructor HirIdent HirIdent [HirExpr]
-    -- name arguments
+    -- ^ construct data variant: data type name, variant name, args
   | HirFnCall HirIdent [HirExpr]
-    -- name arguments
+    -- ^ function call: name, args
   | HirClosureCall HirIdent [HirExpr]
-    -- arg_name body
+    -- ^ closure call: name, args
   | HirClosure HirIdent HirExpr
-    -- name expr body
+    -- ^ single argument closure: argument name, body
   | HirLet HirIdent HirExpr HirExpr
-    -- clause [match value] fallback
+    -- ^ let expression: name, value, body
   | HirMatch HirExpr [HirArm] (Maybe HirExpr)
-    -- expr
+    -- ^ match expression: expression, arms, fallback
   | HirDeref HirExpr
+    -- ^ dereference: expression
   | HirNoneInstance
+    -- ^ none instance
 
 instance Show HirExpr where
   show (HirVarRef name) = T.unpack name
@@ -50,10 +52,16 @@ instance Show HirExpr where
 
 data HirType
   = HirNamedType HirIdent [HirType]
+    -- ^ type with name: name, generics
   | HirGeneric HirIdent
+    -- ^ generic type parameter: name
   | HirBruijn Int
+    -- ^ de bruijn indexed variable: index (should be completely eliminated 
+    -- before converting to LIR) 
   | HirFn HirType HirType
+    -- ^ function type: argument type, return type
   | HirNone
+    -- ^ none type
 
 instance Show HirType where
   show (HirNamedType name []) = T.unpack name
@@ -67,7 +75,9 @@ instance Show HirType where
 
 data HirStmt
   = HirFunction HirIdent [HirType] HirExpr
+    -- ^ function: name, args, body
   | HirConstructor HirIdent [(HirIdent, [HirType])]
+    -- ^ datta constructor: name, variants
 
 instance Show HirStmt where
   show (HirFunction name args body) =

@@ -10,29 +10,34 @@ type LirArm = (LirExpr, LirExpr)
 
 data LirExpr
   = LirVarRef LirIdent
-    -- datatype_name constructor_name args
-  | LirDataConstructor LirIdent LirIdent [LirExpr]
-    -- name arguments
+    -- ^ variable reference: identifier
+  | LirEnumConstructor LirIdent LirIdent [LirExpr]
+    -- ^ enum constructor: enum name, variant name, args
   | LirFnCall LirIdent [LirExpr]
-    -- name arguments
+    -- ^ function call: name, args
   | LirClosureCall LirIdent [LirExpr]
-    -- arg_name body
+    -- ^ closure call: name, args
   | LirClosure LirIdent LirExpr
-    -- name expr body
+    -- ^ single argument closure: argument name, body
   | LirLet LirIdent LirExpr LirExpr
-    -- clause [match value] fallback
+    -- ^ single let expression: name, value, body
   | LirMatch LirExpr [LirArm] (Maybe LirExpr)
-    -- expr
+    -- ^ match statement: expression, arms, fallback
   | LirDeref LirExpr
+    -- ^ dereference: expression
   | LirBox LirExpr
+    -- ^ box shorthand: expression
   | LirNoneInstance
+    -- ^ none instance
   | LirWildcard
+    -- ^ match wildcard
   | LirUnreachable
+    -- ^ match unreachable
   deriving (Eq)
 
 instance Show LirExpr where
   show (LirVarRef name) = T.unpack name
-  show (LirDataConstructor datatype constructor args) =
+  show (LirEnumConstructor datatype constructor args) =
     T.unpack datatype ++
     "::" ++
     T.unpack constructor ++ "(" ++ intercalate ", " (map show args) ++ ")"
@@ -70,11 +75,17 @@ formatGenerics xs = "<" ++ intercalate ", " (map show xs) ++ ">"
 
 data LirType
   = LirNamedType LirIdent [LirType]
+    -- ^ type with name: name, generics
   | LirGeneric LirIdent
-  | LirFnOnce LirType LirType
+    -- ^ generic type parameter: name
   | LirFn LirType LirType
+    -- ^ function type: argument type, return type
+  | LirFnOnce LirType LirType
+    -- ^ once function type: argument type, return type
   | LirBoxed LirType
+    -- ^ boxed type: inner type
   | LirNone
+    -- ^ none type
   deriving (Eq)
 
 instance Show LirType where
@@ -89,9 +100,11 @@ instance Show LirType where
 
 data LirStmt
   = LirFunction LirIdent [LirType] LirType LirExpr
+    -- ^ function: name, args, return type, body
   | LirEnum LirIdent [LirType] [(LirIdent, [LirType])]
+    -- ^ enum: name, generics, variants
   | LirTypeAlias LirIdent LirType [LirType]
-  deriving (Eq)
+    -- ^ type alias: name, type, generics
 
 instance Show LirStmt where
   show (LirFunction name generics ret_type body) =

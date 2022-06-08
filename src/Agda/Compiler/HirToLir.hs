@@ -14,7 +14,7 @@ class ToLir a b where
 instance ToLir HirExpr LirExpr where
   toLir (HirVarRef x) = LirVarRef x
   toLir (HirDataConstructor datatype constructor args) =
-    LirDataConstructor datatype constructor (map toLir args)
+    LirEnumConstructor datatype constructor (map toLir args)
   toLir (HirFnCall name args) = LirFnCall name (map toLir args)
   toLir (HirClosureCall name args) = LirClosureCall name (map toLir args)
   toLir (HirClosure arg body) = LirClosure arg (toLir body)
@@ -149,7 +149,7 @@ instance ToLir HirStmt [LirStmt] where
             (\(n, ts) ->
                foldr
                  (\(x, argName) acc -> LirClosure (T.pack [argName]) acc)
-                 (LirDataConstructor
+                 (LirEnumConstructor
                     name
                     n
                     (map
