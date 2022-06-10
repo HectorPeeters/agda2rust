@@ -256,12 +256,16 @@ getSignatureFromDef def = do
   ret <- toRust $ theCore telView
   return $ eliminateDeBruijn 0 (arguments ++ [ret])
 
+removeLast :: [a] -> [a]
+removeLast xs = [xs !! i | i <- [0 .. (length xs - 2)]]
+
 compileFunction :: Definition -> TTerm -> HirExpr -> ToRustM [HirStmt]
 compileFunction func tl body = do
   let def = theDef func
   name <- makeRustName $ defName func
   args <- getSignatureFromDef func
-  return [HirFunction name args body]
+  let lazyArgs = map (\x -> HirNamedType "Lazy" [x]) (removeLast args)
+  return [HirFunction name (lazyArgs ++ [last args]) body]
 
 unique :: Eq a => [a] -> [a]
 unique []     = []
@@ -312,7 +316,8 @@ instance ToRust (TTerm, [TTerm]) HirExpr where
   toRust (TCoerce w, args) = toRust (w, args)
   toRust (TApp w args1, args2) = toRust (w, args1 ++ args2)
   toRust (w, args) = do
-    args <- traverse toRust args
+    as <- traverse toRust args
+    let args = map HirLazy as
     case w of
       TVar i -> do
         (name, shouldDeref) <- getVar i

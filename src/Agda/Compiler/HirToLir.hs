@@ -12,12 +12,13 @@ class ToLir a b where
   toLir :: a -> b
 
 instance ToLir HirExpr LirExpr where
-  toLir (HirVarRef x) = LirVarRef x
+  toLir (HirVarRef x) = LirDeref $ LirVarRef x
   toLir (HirDataConstructor datatype constructor args) =
     LirEnumConstructor datatype constructor (map toLir args)
   toLir (HirFnCall name args) = LirFnCall name (map toLir args)
   toLir (HirClosureCall name args) = LirClosureCall name (map toLir args)
-  toLir (HirClosure arg body) = LirClosure arg (toLir body)
+  toLir (HirClosure arg body) = LirClosure [arg] (toLir body)
+  toLir (HirLazy expr) = LirLazyConstructor $ toLir expr
   toLir (HirLet name expr body) = LirLet name (toLir expr) (toLir body)
   toLir (HirMatch expr arms fallback) =
     LirMatch
@@ -40,7 +41,7 @@ unique (x:xs) = x : unique (filter (x /=) xs)
 
 extractGenericsFromType :: LirType -> [LirType]
 extractGenericsFromType (LirNamedType name gs) =
-  unique gs ++ [LirGeneric name | T.length name == 1]
+  concatMap extractGenericsFromType gs ++ [LirGeneric name | T.length name == 1]
 extractGenericsFromType x@(LirGeneric _) = [x]
 extractGenericsFromType (LirFnOnce arg ret) =
   unique (extractGenericsFromType arg ++ extractGenericsFromType ret)
@@ -81,8 +82,9 @@ instance ToLir (LirIdent, [LirType], LirExpr) [LirStmt] where
                let generics =
                      unique
                        (extractGenericsFromType firstType ++
-                        (concat $
-                         (map extractGenericsFromType (take (n + 1) argTypes))))
+                        concatMap
+                          extractGenericsFromType
+                          (take (n + 1) argTypes))
                    ownGenerics = extractGenericsFromType t
                 in case t of
                      (LirFnOnce arg ret) ->
@@ -148,7 +150,7 @@ instance ToLir HirStmt [LirStmt] where
           map
             (\(n, ts) ->
                foldr
-                 (\(x, argName) acc -> LirClosure (T.pack [argName]) acc)
+                 (\(x, argName) acc -> LirClosure [T.pack [argName]] acc)
                  (LirEnumConstructor
                     name
                     n

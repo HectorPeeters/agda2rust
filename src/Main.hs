@@ -16,6 +16,7 @@ import           Data.List                (intercalate)
 import           Data.Maybe               (catMaybes)
 import qualified Data.Text                as T
 import qualified Data.Text.IO             as T
+import           Prelude                  (unlines)
 import           Prelude                  hiding (empty, null)
 
 main :: IO ()
@@ -54,13 +55,18 @@ rustCompileDef opts _ isMain def = do
 rustPrelude =
   unlines
     [ "#![feature(type_alias_impl_trait)]"
+    , "#![feature(once_cell)]"
     , "#![allow(unconditional_recursion)]"
     , "#![allow(non_camel_case_types)]"
     , "#![allow(unreachable_patterns)]"
     , "#![allow(unused_variables)]"
     , "#![allow(dead_code)]"
+    , ""
+    , "use std::lazy::Lazy;"
     ] ++
   "\n"
+
+rustMain = unlines ["fn main() {", "println!(\"{:?}\", test1());", "}"]
 
 rustPostModule ::
      RustOptions -> () -> IsMain -> ModuleName -> [[HirStmt]] -> TCM ()
@@ -70,7 +76,6 @@ rustPostModule opts _ isMain modName defList = do
   let hirFileName = prettyShow (last $ mnameToList modName) ++ ".hir"
   liftIO $ T.writeFile hirFileName (T.pack hirText)
   let lir :: [LirStmt] = toLir defs
-  let lirText =
-        rustPrelude ++ intercalate "\n\n" (map show lir) ++ "\nfn main() {}"
+  let lirText = rustPrelude ++ intercalate "\n\n" (map show lir) ++ rustMain
   let lirFileName = prettyShow (last $ mnameToList modName) ++ ".rs"
   liftIO $ T.writeFile lirFileName (T.pack lirText)

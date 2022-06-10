@@ -19,6 +19,8 @@ data HirExpr
     -- ^ closure call: name, args
   | HirClosure HirIdent HirExpr
     -- ^ single argument closure: argument name, body
+  | HirLazy HirExpr
+    -- ^ delay evaluation: expression
   | HirLet HirIdent HirExpr HirExpr
     -- ^ let expression: name, value, body
   | HirMatch HirExpr [HirArm] (Maybe HirExpr)
@@ -39,6 +41,7 @@ instance Show HirExpr where
   show (HirClosureCall name args) =
     "(" ++ T.unpack name ++ ")(" ++ intercalate ", " (map show args) ++ ")"
   show (HirClosure name body) = "|" ++ T.unpack name ++ "| " ++ show body
+  show (HirLazy expr) = "lazy " ++ show expr
   show (HirLet name expr body) =
     "let " ++ T.unpack name ++ " = " ++ show expr ++ "\n" ++ show body
   show (HirMatch clause arms Nothing) =
@@ -56,8 +59,8 @@ data HirType
   | HirGeneric HirIdent
     -- ^ generic type parameter: name
   | HirBruijn Int
-    -- ^ de bruijn indexed variable: index (should be completely eliminated 
-    -- before converting to LIR) 
+    -- ^ de bruijn indexed variable: index (should be completely eliminated
+    -- before converting to LIR)
   | HirFn HirType HirType
     -- ^ function type: argument type, return type
   | HirNone
