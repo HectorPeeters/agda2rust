@@ -164,7 +164,7 @@ makeRustName n = go $ T.pack $ fixName $ prettyShow $ qnameName n
             else s'
     fixChar c
       | isValidRustChar c = [c]
-      | otherwise = "\\x" ++ toHex (ord c) ++ ";"
+      | otherwise = "0x" ++ toHex (ord c)
     toHex 0 = ""
     toHex i = toHex (i `div` 16) ++ [fourBitsToChar (i `mod` 16)]
 

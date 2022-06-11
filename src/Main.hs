@@ -61,6 +61,7 @@ rustPrelude =
     , "#![allow(unreachable_patterns)]"
     , "#![allow(unused_variables)]"
     , "#![allow(dead_code)]"
+    , "#![allow(non_snake_case)]"
     , ""
     , "mod lazy;"
     , "use lazy::Lazy;"
