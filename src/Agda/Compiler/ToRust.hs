@@ -264,8 +264,7 @@ compileFunction func tl body = do
   let def = theDef func
   name <- makeRustName $ defName func
   args <- getSignatureFromDef func
-  let lazyArgs = map (\x -> HirNamedType "Lazy" [x]) (removeLast args)
-  return [HirFunction name (lazyArgs ++ [last args]) body]
+  return [HirFunction name args body]
 
 unique :: Eq a => [a] -> [a]
 unique []     = []
@@ -286,7 +285,7 @@ instance ToRust Definition [HirStmt] where
         case maybeCompiled of
           Just tl -> do
             body <- toRust tl
-            trace (prettyShow tl) (compileFunction def tl body)
+            compileFunction def tl body
           Nothing -> return []
       Primitive {} -> return []
       PrimitiveSort {} -> return []
@@ -316,13 +315,12 @@ instance ToRust (TTerm, [TTerm]) HirExpr where
   toRust (TCoerce w, args) = toRust (w, args)
   toRust (TApp w args1, args2) = toRust (w, args1 ++ args2)
   toRust (w, args) = do
-    as <- traverse toRust args
-    let args = map HirLazy as
+    args <- traverse toRust args
     case w of
       TVar i -> do
         (name, shouldDeref) <- getVar i
         case args of
-          []   -> return $ derefIfRequired (HirVarRef name) shouldDeref
+          [] -> return $ derefIfRequired (HirClone $ HirVarRef name) shouldDeref
           args -> return $ HirClosureCall name args
       TPrim p -> toRust (p, args)
       TDef d -> do
@@ -346,7 +344,7 @@ instance ToRust (TTerm, [TTerm]) HirExpr where
       TCase i info v bs -> do
         cases <- traverse toRust bs
         (var, shouldDeref) <- getVar i
-        let matchClause = derefIfRequired (HirVarRef var) shouldDeref
+        let matchClause = derefIfRequired (HirClone $ HirVarRef var) shouldDeref
         fallback <-
           if isUnreachable v
             then return Nothing

@@ -19,8 +19,9 @@ data LirExpr
     -- ^ closure call: name, args
   | LirClosure [LirIdent] LirExpr
     -- ^ single argument closure: argument name, body
-  | LirLazyConstructor LirExpr
+  | LirLazyConstructor LirExpr Bool
     -- ^ create new lazy value
+  | LirClone LirExpr
   | LirLet LirIdent LirExpr LirExpr
     -- ^ single let expression: name, value, body
   | LirMatch LirExpr [LirArm] (Maybe LirExpr)
@@ -52,7 +53,11 @@ instance Show LirExpr where
     ")" ++ intercalate "" (map (\x -> "(" ++ show x ++ ")") args)
   show (LirClosure name body) =
     "move |" ++ intercalate ", " (map T.unpack name) ++ "| " ++ show body
-  show (LirLazyConstructor expr) = "Lazy::new(|| " ++ show expr ++ ")"
+  show (LirLazyConstructor expr fake) =
+    if fake
+      then "Lazy::facade(" ++ show expr ++ ")"
+      else "Lazy::new(|| " ++ show expr ++ ")"
+  show (LirClone expr) = show expr ++ ".clone()"
   show (LirLet name expr body) =
     "{let " ++
     T.unpack name ++ " = " ++ show expr ++ ";\n" ++ show body ++ "\n}"
@@ -118,10 +123,10 @@ instance Show LirStmt where
   show (LirFunction name generics ret_type body) =
     "fn " ++
     T.unpack name ++
-    formatGenerics generics (Just "Copy") ++
+    formatGenerics generics (Just "Clone") ++
     "() -> " ++ show ret_type ++ " {\n" ++ show body ++ "\n}"
   show (LirEnum name generics fields) =
-    "#[derive(Debug, Copy, Clone)]\nenum " ++
+    "#[derive(Debug, Clone)]\nenum " ++
     T.unpack name ++
     formatGenerics generics Nothing ++
     "{\n" ++
@@ -135,4 +140,4 @@ instance Show LirStmt where
   show (LirTypeAlias name typ generics) =
     "type " ++
     T.unpack name ++
-    formatGenerics generics (Just "Copy") ++ " = " ++ show typ ++ ";"
+    formatGenerics generics (Just "Clone") ++ " = " ++ show typ ++ ";"

@@ -11,14 +11,39 @@ import           Debug.Trace
 class ToLir a b where
   toLir :: a -> b
 
+needsLazyFake :: LirExpr -> Bool
+needsLazyFake (LirVarRef _) = True
+needsLazyFake (LirEnumConstructor _ _ args) =
+  trace (show args) (any needsLazyFake args)
+needsLazyFake (LirFnCall _ args) = any needsLazyFake args
+needsLazyFake (LirClosureCall _ args) = any needsLazyFake args
+needsLazyFake (LirLazyConstructor _ x) = x
+needsLazyFake (LirClone expr) = needsLazyFake expr
+needsLazyFake (LirLet _ value body) = needsLazyFake value || needsLazyFake body
+needsLazyFake (LirMatch clause arms Nothing) =
+  needsLazyFake clause || any (needsLazyFake . snd) arms
+needsLazyFake (LirMatch clause arms (Just fallback)) =
+  needsLazyFake clause ||
+  any (needsLazyFake . snd) arms || needsLazyFake fallback
+needsLazyFake (LirDeref expr) = needsLazyFake expr
+needsLazyFake (LirBox expr) = needsLazyFake expr
+needsLazyFake _ = False
+
 instance ToLir HirExpr LirExpr where
-  toLir (HirVarRef x) = LirDeref $ LirVarRef x
+  toLir (HirVarRef x) = LirVarRef x
   toLir (HirDataConstructor datatype constructor args) =
     LirEnumConstructor datatype constructor (map toLir args)
-  toLir (HirFnCall name args) = LirFnCall name (map toLir args)
+  toLir (HirFnCall name args) =
+    LirFnCall
+      name
+      (map
+         (\x ->
+            (let l = toLir x
+              in LirLazyConstructor l (needsLazyFake l)))
+         args)
   toLir (HirClosureCall name args) = LirClosureCall name (map toLir args)
   toLir (HirClosure arg body) = LirClosure [arg] (toLir body)
-  toLir (HirLazy expr) = LirLazyConstructor $ toLir expr
+  toLir (HirClone expr) = LirClone (toLir expr)
   toLir (HirLet name expr body) = LirLet name (toLir expr) (toLir body)
   toLir (HirMatch expr arms fallback) =
     LirMatch
@@ -74,11 +99,13 @@ instance ToLir (LirIdent, [LirType], LirExpr) [LirStmt] where
   toLir (name, argTypes, body) = do
     let makeAliasName name n = T.append name (T.pack $ show n)
     let firstType =
-          LirFnOnce (argTypes !! (length argTypes - 2)) (last argTypes)
+          LirFnOnce
+            (LirNamedType "Lazy" [argTypes !! (length argTypes - 2)])
+            (last argTypes)
     let types :: [[LirType]] =
           [firstType] :
           zipWith
-            (\t n ->
+            (\typ n ->
                let generics =
                      unique
                        (extractGenericsFromType firstType ++
@@ -86,17 +113,16 @@ instance ToLir (LirIdent, [LirType], LirExpr) [LirStmt] where
                           extractGenericsFromType
                           (take (n + 1) argTypes))
                    ownGenerics = extractGenericsFromType t
+                   t = LirNamedType "Lazy" [typ]
                 in case t of
                      (LirFnOnce arg ret) ->
-                       trace
-                         (show arg ++ " " ++ show ret ++ " " ++ show t)
-                         [ LirFn arg ret
-                         , LirFnOnce
-                             (LirNamedType
-                                (T.append (makeAliasName name (n - 1)) "_")
-                                (unique (generics ++ ownGenerics)))
-                             (LirNamedType (makeAliasName name (n - 2)) generics)
-                         ]
+                       [ LirFn arg ret
+                       , LirFnOnce
+                           (LirNamedType
+                              (T.append (makeAliasName name (n - 1)) "_")
+                              (unique (generics ++ ownGenerics)))
+                           (LirNamedType (makeAliasName name (n - 2)) generics)
+                       ]
                      _ ->
                        [ LirFnOnce
                            t
@@ -155,7 +181,7 @@ instance ToLir HirStmt [LirStmt] where
                     name
                     n
                     (map
-                       (\c -> LirBox $ LirVarRef $ T.pack [c])
+                       (\c -> LirBox $ LirClone $ LirVarRef $ T.pack [c])
                        (take (length ts) ['a' ..])))
                  (zip ts ['a' ..]))
             lirVariants

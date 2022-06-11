@@ -62,11 +62,12 @@ rustPrelude =
     , "#![allow(unused_variables)]"
     , "#![allow(dead_code)]"
     , ""
-    , "use std::lazy::Lazy;"
+    , "mod lazy;"
+    , "use lazy::Lazy;"
     ] ++
   "\n"
 
-rustMain = unlines ["fn main() {", "println!(\"{:?}\", test1());", "}"]
+rustMain = unlines ["", "fn main() {", "println!(\"{:?}\", test1());", "}"]
 
 rustPostModule ::
      RustOptions -> () -> IsMain -> ModuleName -> [[HirStmt]] -> TCM ()
