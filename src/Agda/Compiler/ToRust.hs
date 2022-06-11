@@ -86,7 +86,8 @@ getVar i = reader $ (!! i) . toRustVars
 
 reservedNames :: Set HirIdent
 reservedNames =
-  Set.fromList ["if", "fn", "match", "+", "-", "*", "/", "true", "false"]
+  Set.fromList
+    ["if", "fn", "match", "+", "-", "*", "/", "true", "false", "loop"]
 
 freshVars :: [Text]
 freshVars = concat [map (<> i) xs | i <- "" : map (T.pack . show) [1 ..]]
