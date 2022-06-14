@@ -6,8 +6,9 @@ import           Agda.Compiler.Hir        (HirStmt)
 import           Agda.Compiler.HirToLir   (ToLir (toLir))
 import           Agda.Compiler.Lir        (LirStmt)
 import           Agda.Compiler.ToRust     (RustOptions (RustOptions),
-                                           ToRust (toRust), runToRustM)
-import           Agda.Interaction.Options (OptDescr)
+                                           ToRust (toRust), runToRustM,
+                                           rustEvaluation)
+import           Agda.Interaction.Options (ArgDescr (NoArg), OptDescr (Option))
 import           Agda.Main                (runAgda)
 import           Agda.Syntax.Treeless     (EvaluationStrategy (EagerEvaluation))
 import           Agda.Utils.Pretty        (prettyShow)
@@ -43,7 +44,16 @@ backend' =
     }
 
 rustFlags :: [OptDescr (Flag RustOptions)]
-rustFlags = []
+rustFlags =
+  [ Option
+      []
+      ["lazy-evaluation"]
+      (NoArg $ evaluationFlag LazyEvaluation)
+      "Insert delay and force operations to enable lazy evaluatoin"
+  ]
+
+evaluationFlag :: EvaluationStrategy -> Flag RustOptions
+evaluationFlag s o = return $ o {rustEvaluation = s}
 
 rustPreCompile :: RustOptions -> TCM RustOptions
 rustPreCompile = return
@@ -68,7 +78,7 @@ rustPrelude =
     ] ++
   "\n"
 
-rustMain = unlines ["", "fn main() {", "println!(\"{:?}\", test1());", "}"]
+rustMain = unlines ["", "fn main() {", "println!(\"{:?}\", test());", "}"]
 
 rustPostModule ::
      RustOptions -> () -> IsMain -> ModuleName -> [[HirStmt]] -> TCM ()
@@ -77,7 +87,8 @@ rustPostModule opts _ isMain modName defList = do
   let hirText = intercalate "\n\n" (map show defs)
   let hirFileName = prettyShow (last $ mnameToList modName) ++ ".hir"
   liftIO $ T.writeFile hirFileName (T.pack hirText)
-  let lir :: [LirStmt] = toLir defs
+  let evaluationStrategy = rustEvaluation opts
+  let lir :: [LirStmt] = toLir defs evaluationStrategy
   let lirText = rustPrelude ++ intercalate "\n\n" (map show lir) ++ rustMain
   let lirFileName = prettyShow (last $ mnameToList modName) ++ ".rs"
   liftIO $ T.writeFile lirFileName (T.pack lirText)

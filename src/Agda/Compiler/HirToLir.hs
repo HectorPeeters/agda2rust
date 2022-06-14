@@ -1,6 +1,7 @@
 module Agda.Compiler.HirToLir where
 
 import           Agda.Auto.NarrowingSearch (extractblkinfos)
+import           Agda.Compiler.Backend     (EvaluationStrategy (LazyEvaluation))
 import           Agda.Compiler.Hir
 import           Agda.Compiler.Lir
 import           Agda.Utils.Impossible     (__IMPOSSIBLE__)
@@ -9,7 +10,7 @@ import qualified Data.Text                 as T
 import           Debug.Trace
 
 class ToLir a b where
-  toLir :: a -> b
+  toLir :: a -> EvaluationStrategy -> b
 
 needsLazyFake :: LirExpr -> Bool
 needsLazyFake (LirVarRef _) = True
@@ -30,35 +31,42 @@ needsLazyFake (LirBox expr) = needsLazyFake expr
 needsLazyFake _ = False
 
 instance ToLir HirExpr LirExpr where
-  toLir (HirVarRef x) = LirVarRef x
-  toLir (HirDataConstructor datatype constructor args) =
-    LirEnumConstructor datatype constructor (map toLir args)
-  toLir (HirFnCall name args) =
+  toLir (HirVarRef x) _ = LirVarRef x
+  toLir (HirDataConstructor datatype constructor args) strat =
+    LirEnumConstructor datatype constructor (map (`toLir` strat) args)
+  toLir (HirFnCall name args) strat =
     LirFnCall
       name
-      (map
-         (\x ->
-            (let l = toLir x
-              in LirLazyConstructor l (needsLazyFake l)))
-         args)
-  toLir (HirClosureCall name args) = LirClosureCall name (map toLir args)
-  toLir (HirClosure arg body) = LirClosure [arg] (toLir body)
-  toLir (HirClone expr) = LirClone (toLir expr)
-  toLir (HirLet name expr body) = LirLet name (toLir expr) (toLir body)
-  toLir (HirMatch expr arms fallback) =
+      if strat == LazyEvaluation
+        then map
+               (\x ->
+                  (let l = toLir x strat
+                    in LirLazyConstructor l (needsLazyFake l)))
+               args
+        else map (`toLir` strat) args
+  toLir (HirClosureCall name args) strat =
+    LirClosureCall name (map (`toLir` strat) args)
+  toLir (HirClosure arg body) strat = LirClosure [arg] (toLir body strat)
+  toLir (HirClone expr) strat = LirClone (toLir expr strat)
+  toLir (HirLet name expr body) strat =
+    LirLet name (toLir expr strat) (toLir body strat)
+  toLir (HirMatch expr arms fallback) strat =
     LirMatch
-      (toLir expr)
-      (map (bimap toLir toLir) arms ++ [(LirWildcard, LirUnreachable)])
-      (fmap toLir fallback)
-  toLir (HirDeref expr) = LirDeref (toLir expr)
-  toLir HirNoneInstance = LirNoneInstance
+      (toLir expr strat)
+      (map (bimap (`toLir` strat) (`toLir` strat)) arms ++
+       [(LirWildcard, LirUnreachable)])
+      (fmap (`toLir` strat) fallback)
+  toLir (HirDeref expr) strat = LirDeref (toLir expr strat)
+  toLir HirNoneInstance _ = LirNoneInstance
 
 instance ToLir HirType LirType where
-  toLir (HirNamedType name generics) = LirNamedType name (map toLir generics)
-  toLir (HirGeneric name)            = LirGeneric name
-  toLir (HirBruijn _)                = __IMPOSSIBLE__
-  toLir (HirFn argType retType)      = LirFnOnce (toLir argType) (toLir retType)
-  toLir HirNone                      = LirNone
+  toLir (HirNamedType name generics) strat =
+    LirNamedType name (map (`toLir` strat) generics)
+  toLir (HirGeneric name) strat = LirGeneric name
+  toLir (HirBruijn _) strat = __IMPOSSIBLE__
+  toLir (HirFn argType retType) strat =
+    LirFnOnce (toLir argType strat) (toLir retType strat)
+  toLir HirNone strat = LirNone
 
 unique :: Eq a => [a] -> [a]
 unique []     = []
@@ -86,21 +94,24 @@ extractGenericsFromStmt (LirEnum _ gs variants) =
 extractGenericsFromStmt (LirTypeAlias _ t g) = extractGenericsFromType t ++ g
 
 instance ToLir [HirStmt] [LirStmt] where
-  toLir xs = unique $ concatMap toLir xs
+  toLir xs strat = unique $ concatMap (`toLir` strat) xs
 
 removeLast :: [a] -> [a]
 removeLast xs = [xs !! i | i <- [0 .. (length xs - 2)]]
 
 -- Convert function to lir
 instance ToLir (LirIdent, [LirType], LirExpr) [LirStmt] where
-  toLir (name, [argType], body) = do
+  toLir (name, [argType], body) strat = do
     let makeAliasName name n = T.append name (T.pack $ show n)
     [LirFunction name (extractGenericsFromType argType) argType body]
-  toLir (name, argTypes, body) = do
+  toLir (name, argTypes, body) strat = do
     let makeAliasName name n = T.append name (T.pack $ show n)
+    let lazy = strat == LazyEvaluation
     let firstType =
           LirFnOnce
-            (LirNamedType "Lazy" [argTypes !! (length argTypes - 2)])
+            (if lazy
+               then LirNamedType "Lazy" [argTypes !! (length argTypes - 2)]
+               else argTypes !! (length argTypes - 2))
             (last argTypes)
     let types :: [[LirType]] =
           [firstType] :
@@ -113,7 +124,10 @@ instance ToLir (LirIdent, [LirType], LirExpr) [LirStmt] where
                           extractGenericsFromType
                           (take (n + 1) argTypes))
                    ownGenerics = extractGenericsFromType t
-                   t = LirNamedType "Lazy" [typ]
+                   t =
+                     if lazy
+                       then LirNamedType "Lazy" [typ]
+                       else typ
                 in case t of
                      (LirFnOnce arg ret) ->
                        [ LirFn arg ret
@@ -160,13 +174,15 @@ instance ToLir (LirIdent, [LirType], LirExpr) [LirStmt] where
       [LirFunction name (extractGenericsFromType returnType) returnType body]
 
 instance ToLir HirStmt [LirStmt] where
-  toLir (HirFunction name argTypes body) = do
-    let lirBody :: LirExpr = toLir body
-    let lirArgTypes :: [LirType] = map toLir argTypes
-    toLir (name, lirArgTypes, lirBody)
-  toLir (HirConstructor name variants) = do
+  toLir (HirFunction name argTypes body) strat = do
+    let lirBody :: LirExpr = toLir body strat
+    let lirArgTypes :: [LirType] = map (`toLir` strat) argTypes
+    toLir (name, lirArgTypes, lirBody) strat
+  toLir (HirConstructor name variants) strat = do
     let lirVariants =
-          map (\(n, args) -> (n, map toLir (removeLast args))) variants
+          map
+            (\(n, args) -> (n, map (`toLir` strat) (removeLast args)))
+            variants
     let generics =
           unique $
           concatMap (\(_, x) -> concatMap extractGenericsFromType x) lirVariants
@@ -181,7 +197,9 @@ instance ToLir HirStmt [LirStmt] where
                     name
                     n
                     (map
-                       (\c -> LirBox $ LirClone $ LirVarRef $ T.pack [c])
+                       (if strat == LazyEvaluation
+                          then (\c -> LirBox $ LirClone $ LirVarRef $ T.pack [c])
+                          else (\c -> LirBox $ LirVarRef $ T.pack [c]))
                        (take (length ts) ['a' ..])))
                  (zip ts ['a' ..]))
             lirVariants
@@ -189,7 +207,7 @@ instance ToLir HirStmt [LirStmt] where
           concat $
           zipWith
             (\(n, ts) body ->
-               toLir (n, ts ++ [LirNamedType name generics], body))
+               toLir (n, ts ++ [LirNamedType name generics], body) strat)
             lirVariants
             constructorBodies
     enumConstructor : constructorFunctions

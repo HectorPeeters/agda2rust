@@ -1,6 +1,7 @@
 module Agda.Compiler.ToRust where
 
-import           Agda.Compiler.Backend                           (HasConstInfo (getConstInfo),
+import           Agda.Compiler.Backend                           (EvaluationStrategy (LazyEvaluation),
+                                                                  HasConstInfo (getConstInfo),
                                                                   TTerm)
 import           Agda.Compiler.Common
 import           Agda.Compiler.Hir
@@ -15,6 +16,7 @@ import           Agda.Syntax.Internal                            as I
 import           Agda.Syntax.Literal
 import           Agda.Syntax.Parser.Literate                     (literateMd)
 import           Agda.Syntax.Treeless
+import           Agda.Syntax.Treeless                            (EvaluationStrategy (LazyEvaluation))
 import           Agda.TypeChecking.Monad
 import           Agda.TypeChecking.Pretty
 import           Agda.TypeChecking.Primitive.Base
@@ -172,11 +174,6 @@ getDataTypeName :: QName -> Text
 getDataTypeName name =
   T.pack $ prettyShow (nameConcrete (last (mnameToList (qnameModule name))))
 
-withFreshVar :: Bool -> (Text -> ToRustM a) -> ToRustM a
-withFreshVar shouldDeref f = do
-  strat <- getEvaluationStrategy
-  withFreshVar' strat shouldDeref f
-
 withFreshVars :: Int -> Bool -> ([Text] -> ToRustM a) -> ToRustM a
 withFreshVars i shouldDeref f
   | i <= 0 = f []
@@ -184,8 +181,8 @@ withFreshVars i shouldDeref f
     withFreshVar shouldDeref $ \x ->
       withFreshVars (i - 1) shouldDeref (f . (x :))
 
-withFreshVar' :: EvaluationStrategy -> Bool -> (Text -> ToRustM a) -> ToRustM a
-withFreshVar' strat shouldDeref f = do
+withFreshVar :: Bool -> (Text -> ToRustM a) -> ToRustM a
+withFreshVar shouldDeref f = do
   x <- freshRustIdentifier
   local (addBinding x shouldDeref) $ f x
 
@@ -308,20 +305,23 @@ instance ToRust TTerm HirExpr where
     v <- liftTCM $ eliminateLiteralPatterns (convertGuards v)
     toRust $ tAppView v
 
-derefIfRequired :: HirExpr -> Bool -> HirExpr
-derefIfRequired expr False = expr
-derefIfRequired expr True  = HirDeref expr
+derefIfRequired :: HirExpr -> Bool -> EvaluationStrategy -> HirExpr
+derefIfRequired expr False LazyEvaluation = HirClone expr
+derefIfRequired expr False _              = expr
+derefIfRequired expr True LazyEvaluation  = HirDeref $ HirClone expr
+derefIfRequired expr True _               = HirDeref expr
 
 instance ToRust (TTerm, [TTerm]) HirExpr where
   toRust (TCoerce w, args) = toRust (w, args)
   toRust (TApp w args1, args2) = toRust (w, args1 ++ args2)
   toRust (w, args) = do
     args <- traverse toRust args
+    strat <- getEvaluationStrategy
     case w of
       TVar i -> do
         (name, shouldDeref) <- getVar i
         case args of
-          [] -> return $ derefIfRequired (HirClone $ HirVarRef name) shouldDeref
+          []   -> return $ derefIfRequired (HirVarRef name) shouldDeref strat
           args -> return $ HirClosureCall name args
       TPrim p -> toRust (p, args)
       TDef d -> do
@@ -345,7 +345,7 @@ instance ToRust (TTerm, [TTerm]) HirExpr where
       TCase i info v bs -> do
         cases <- traverse toRust bs
         (var, shouldDeref) <- getVar i
-        let matchClause = derefIfRequired (HirClone $ HirVarRef var) shouldDeref
+        let matchClause = derefIfRequired (HirVarRef var) shouldDeref strat
         fallback <-
           if isUnreachable v
             then return Nothing
