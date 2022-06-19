@@ -11,6 +11,12 @@ type LirArm = (LirExpr, LirExpr)
 data LirExpr
   = LirVarRef LirIdent
     -- ^ variable reference: identifier
+  | LirIntLit Integer
+    -- ^ int literal: value
+  | LirBinop String LirExpr LirExpr
+    -- ^ binary operator: operation, left, right
+  | LirIfElse LirExpr LirExpr LirExpr
+    -- ^ if else expression: condition, true case, false case
   | LirEnumConstructor LirIdent LirIdent [LirExpr]
     -- ^ enum constructor: enum name, variant name, args
   | LirFnCall LirIdent [LirExpr]
@@ -40,6 +46,11 @@ data LirExpr
 
 instance Show LirExpr where
   show (LirVarRef name) = T.unpack name
+  show (LirIntLit value) = show value
+  show (LirBinop op left right) = show left ++ " " ++ op ++ " " ++ show right
+  show (LirIfElse cond true false) =
+    "if " ++
+    show cond ++ " {\n" ++ show true ++ "\n} else {\n" ++ show false ++ "\n}"
   show (LirEnumConstructor datatype constructor args) =
     T.unpack datatype ++
     "::" ++

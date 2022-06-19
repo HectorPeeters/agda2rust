@@ -32,6 +32,10 @@ needsLazyFake _ = False
 
 instance ToLir HirExpr LirExpr where
   toLir (HirVarRef x) _ = LirVarRef x
+  toLir (HirIntLit value) _ = LirIntLit value
+  toLir (HirBinop op left right) strat = LirBinop op (toLir left strat) (toLir right strat)
+  toLir (HirIfElse cond true false) strat =
+    LirIfElse (toLir cond strat) (toLir true strat) (toLir false strat)
   toLir (HirDataConstructor datatype constructor args) strat =
     LirEnumConstructor datatype constructor (map (`toLir` strat) args)
   toLir (HirFnCall name args) strat =
@@ -211,3 +215,4 @@ instance ToLir HirStmt [LirStmt] where
             lirVariants
             constructorBodies
     enumConstructor : constructorFunctions
+  toLir (HirTypeAlias name ty) strat = [LirTypeAlias name (toLir ty strat) []]

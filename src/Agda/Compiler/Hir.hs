@@ -11,6 +11,12 @@ type HirArm = (HirExpr, HirExpr)
 data HirExpr
   = HirVarRef HirIdent
     -- ^ variable reference: identifier
+  | HirIntLit Integer
+    -- ^ int literal: value
+  | HirBinop String HirExpr HirExpr
+    -- ^ binary operator: operation, left, right
+  | HirIfElse HirExpr HirExpr HirExpr
+    -- ^ if else expression: condition, true case, false case
   | HirDataConstructor HirIdent HirIdent [HirExpr]
     -- ^ construct data variant: data type name, variant name, args
   | HirFnCall HirIdent [HirExpr]
@@ -31,6 +37,11 @@ data HirExpr
 
 instance Show HirExpr where
   show (HirVarRef name) = T.unpack name
+  show (HirIntLit value) = show value
+  show (HirBinop op left right) =
+    show left ++ " " ++ op ++ " " ++ show right
+  show (HirIfElse cond true false) =
+    "if " ++ show cond ++ " then " ++ show true ++ " else " ++ show false
   show (HirDataConstructor datatype constructor args) =
     T.unpack datatype ++
     "::" ++
@@ -80,6 +91,8 @@ data HirStmt
     -- ^ function: name, args, body
   | HirConstructor HirIdent [(HirIdent, [HirType])]
     -- ^ datta constructor: name, variants
+  | HirTypeAlias HirIdent HirType
+    -- ^ type alias: name type
 
 instance Show HirStmt where
   show (HirFunction name args body) =
@@ -96,3 +109,4 @@ instance Show HirStmt where
          (\(a, b) -> T.unpack a ++ ": " ++ intercalate ", " (map show b))
          fields) ++
     ")"
+  show (HirTypeAlias name ty) = show name ++ " = " ++ show ty

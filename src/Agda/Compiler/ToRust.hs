@@ -2,7 +2,8 @@ module Agda.Compiler.ToRust where
 
 import           Agda.Compiler.Backend                           (EvaluationStrategy (LazyEvaluation),
                                                                   HasConstInfo (getConstInfo),
-                                                                  TTerm)
+                                                                  TTerm,
+                                                                  builtinNat)
 import           Agda.Compiler.Common
 import           Agda.Compiler.Hir
 import           Agda.Compiler.ToTreeless                        (toTreeless)
@@ -166,7 +167,7 @@ makeRustName n = go $ T.pack $ fixName $ prettyShow $ qnameName n
             else s'
     fixChar c
       | isValidRustChar c = [c]
-      | otherwise = "0x" ++ toHex (ord c)
+      | otherwise = "x" ++ toHex (ord c)
     toHex 0 = ""
     toHex i = toHex (i `div` 16) ++ [fourBitsToChar (i `mod` 16)]
 
@@ -288,13 +289,23 @@ instance ToRust Definition [HirStmt] where
       Primitive {} -> return []
       PrimitiveSort {} -> return []
       Datatype {dataCons = cons, dataMutual = mut} -> do
+        builtinName <- getBuiltinName builtinNat
         let enumName = getDataTypeName $ head cons
         variantNames <- mapM makeRustName cons
         signatures <- mapM (liftTCM . getConstInfo) cons
         constructorFnTypes <- mapM getSignatureFromDef signatures
         constructorNames <- mapM makeRustName cons
-        return
-          [HirConstructor enumName (zip constructorNames constructorFnTypes)]
+        let constructor =
+              HirConstructor enumName (zip constructorNames constructorFnTypes)
+        case builtinName of
+          (Just name) -> do
+            rustName <- makeRustName name
+            -- If we are using builtin Nats, we don't need to generate our
+            -- own definition but we can just use a type alias
+            if rustName == "Nat"
+              then return [HirTypeAlias (T.pack "Nat") (HirNamedType "u64" [])]
+              else return [constructor]
+          Nothing -> return [constructor]
       Record {} -> return []
       Constructor {conSrcCon = chead, conArity = nargs} -> return []
       AbstractDefn {} -> __IMPOSSIBLE__
@@ -357,16 +368,16 @@ instance ToRust (TTerm, [TTerm]) HirExpr where
       TError err -> error ("Not implemented " ++ show w)
 
 instance ToRust (TPrim, [HirExpr]) HirExpr where
-  toRust (PAdd, args) = error "Not implemented" -- return $ HirBinop "+" (head args) (args !! 1)
-  toRust (PSub, args) = error "Not implemented" -- return $ HirBinop "-" (head args) (args !! 1)
-  toRust (PIf, args)  = error "Not implemented" -- return $ HirIfElse (head args) (args !! 1) (args !! 2)
-  toRust (PEqI, args) = error "Not implemented" -- return $ HirBinop "==" (head args) (args !! 1)
+  toRust (PAdd, args) = return $ HirBinop "+" (head args) (args !! 1)
+  toRust (PSub, args) = return $ HirBinop "-" (head args) (args !! 1)
+  toRust (PIf, args)  = return $ HirIfElse (head args) (args !! 1) (args !! 2)
+  toRust (PEqI, args) = return $ HirBinop "==" (head args) (args !! 1)
   toRust x            = error "Not implemented "
 
 instance ToRust Literal HirExpr where
   toRust lit =
     case lit of
-      LitNat x    -> error ("Not implemented " ++ show lit)
+      LitNat x    -> return $ HirIntLit x
       LitWord64 x -> error ("Not implemented " ++ show lit)
       LitFloat x  -> error ("Not implemented " ++ show lit)
       LitString x -> error ("Not implemented " ++ show lit)
