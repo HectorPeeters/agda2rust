@@ -56,9 +56,10 @@ deriving instance Generic EvaluationStrategy
 
 deriving instance NFData EvaluationStrategy
 
-newtype RustOptions =
+data RustOptions =
   RustOptions
     { rustEvaluation :: EvaluationStrategy
+    , rustNoMain :: Bool
     }
   deriving (Generic, NFData)
 
